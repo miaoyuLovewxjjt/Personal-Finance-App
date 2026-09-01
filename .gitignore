@@ -1,0 +1,28 @@
+# Gradle / Android
+.gradle/
+build/
+/app/build/
+/local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.keystore
+/keystore/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志与临时
+*.log
+nosignature_*.apk
+# 非代码杂项：图标源图/预览/会话文档（本地保留，不入库）
+/ic_launcher_预览.png
+/图标预览_系统渲染.png
+/APK内图标_*.png
+/.zcode/
