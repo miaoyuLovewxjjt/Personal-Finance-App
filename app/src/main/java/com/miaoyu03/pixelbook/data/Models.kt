@@ -12,6 +12,7 @@ data class Ledger(
     val coverColor: Int,        // 封面配色索引（0..5，对应 LedgerCover.colors 取色）
     val createdAt: String = LocalDate.now().toString(),
     val syncedMonths: Set<String> = emptySet(),   // 已执行过「一键同步」的月份 "2026-09"
+    val font: String = "pixel", // 账本专属字体（见 LedgerFonts：pixel/cute/kaiti/songti）
 )
 
 data class Tx(
@@ -42,14 +43,17 @@ enum class DepositKind(val label: String) {
     MONEY("金钱类"), GOODS("非金钱类")
 }
 
+/** 兜底类别（固定，不可删除/编辑） */
+const val CATEGORY_OTHERS = "其他"
+
 /** 支出分类（图标/颜色/名称） */
 object ExpenseCats {
-    val list = listOf("餐饮", "交通", "购物", "娱乐", "居住", "医疗", "其他")
+    val list = listOf("餐饮", "交通", "购物", "娱乐", "居住", "医疗", CATEGORY_OTHERS)
 }
 
 /** 收入分类 */
 object IncomeCats {
-    val list = listOf("工资", "理财", "红包", "其他")
+    val list = listOf("工资", "理财", "红包", CATEGORY_OTHERS)
 }
 
 /** 天气：按 天 记录（每个账本独立） */

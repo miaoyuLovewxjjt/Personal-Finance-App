@@ -13,6 +13,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.miaoyu03.pixelbook.R
 
 /* ============ 像素风调色板：低饱和暖色 ============ */
 object Px {
@@ -34,6 +35,12 @@ object Px {
     val GrayText  = Color(0xFF9C8B72)   // 灰色小字
     val Red       = Color(0xFFC7504A)   // 医疗十字（低饱和砖红）
 
+    // 图表专用：月度/年度总结图
+    val ChartIn   = Color(0xFF94D8C3)   // 收入（草绿）
+    val ChartOut  = Color(0xFFF4B393)   // 花销（陶土橘）
+    val ChartGold = Color(0xFFE4D48F)   // 暖黄备用
+    val ChartSky  = Color(0xFF8BC8EA)   // 天蓝备用
+
     /** 账本封面配色（5 套） */
     val Covers = listOf(
         Color(0xFF8B9D4E), // 草绿
@@ -49,6 +56,31 @@ object Px {
 fun pixelFontFamily(): FontFamily {
     val ctx = LocalContext.current
     return FontFamily(Font(ctx.resources.getIdentifier("zpix", "font", ctx.packageName), FontWeight.Normal))
+}
+
+/**
+ * 账本可选字体：像素（默认）/ 可爱风 / 楷体 / 宋体。
+ * font 字段值存于 Ledger.font，页面经 LocalLedgerFont 生效。
+ */
+object LedgerFonts {
+    const val PIXEL = "pixel"     // 像素（Zpix，App 默认风格）
+    const val CUTE = "cute"       // 可爱风：站酷快乐体
+    const val KAITI = "kaiti"     // 楷体：霞鹜文楷
+    const val SONG = "songti"     // 宋体：站酷小薇
+
+    val list = listOf(PIXEL, CUTE, KAITI, SONG)
+
+    fun label(f: String): String = when (f) {
+        CUTE -> "可爱风"; KAITI -> "楷体"; SONG -> "宋体"; else -> "像素"
+    }
+
+    @Composable
+    fun family(f: String): FontFamily = when (f) {
+        CUTE -> FontFamily(Font(R.font.zcool_kuaile))
+        KAITI -> FontFamily(Font(R.font.lxgw_wenkai))
+        SONG -> FontFamily(Font(R.font.zcool_xiaowei))
+        else -> pixelFontFamily()
+    }
 }
 
 /** 全局字号等级：同等级内容同一字号（硬性规范） */

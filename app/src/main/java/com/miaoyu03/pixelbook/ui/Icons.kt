@@ -156,6 +156,66 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 左箭头（导航折叠）居中三角（chevronR 镜像） ================= */
+    val chevronL = Def("chevronL", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "........bb......",
+        ".......bYYb.....",
+        "......bYYYYb....",
+        ".....bYYYYYYb...",
+        "......bYYYYb....",
+        ".......bYYb.....",
+        "........bb......",
+        "................",
+        "................",
+        "................",
+    ))
+
+    /* ================= 折叠导航：方框 + 实心左箭头（收起） ================= */
+    val collapseL = Def("collapseL", basePalette, listOf(
+        "................",
+        ".bbbbbbbbbbbbbb.",
+        ".bwwwwwwwwwwwwb.",
+        ".bwyywwwwwwwwwb.",
+        ".bwYYYYwwwwwwwb.",
+        ".bwYYYYYYYYwwwb.",
+        ".bYYYYYYYYYYYYb.",
+        ".bYYYYYYYYYYYYb.",
+        ".bwYYYYYYYYwwwb.",
+        ".bwYYYYwwwwwwwb.",
+        ".bwyywwwwwwwwwb.",
+        ".bwwwwwwwwwwwwb.",
+        ".bwwwwwwwwwwwwb.",
+        ".bbbbbbbbbbbbbb.",
+        "................",
+        "................",
+    ))
+
+    /* ================= 折叠导航：方框 + 实心右箭头（展开） ================= */
+    val collapseR = Def("collapseR", basePalette, listOf(
+        "................",
+        ".bbbbbbbbbbbbbb.",
+        ".bwwwwwwwwwwwwb.",
+        ".bwwwwwwwwwyywb.",
+        ".bwwwwwwwYYYYwb.",
+        ".bwwwYYYYYYYYwb.",
+        ".bYYYYYYYYYYYYb.",
+        ".bYYYYYYYYYYYYb.",
+        ".bwwwYYYYYYYYwb.",
+        ".bwwwwwwwYYYYwb.",
+        ".bwwwwwwwwwyywb.",
+        ".bwwwwwwwwwwwwb.",
+        ".bwwwwwwwwwwwwb.",
+        ".bbbbbbbbbbbbbb.",
+        "................",
+        "................",
+    ))
+
     /* ================= 编辑（铅笔，对角居中） ================= */
     val pencil = Def("pencil", basePalette, listOf(
         "................",
@@ -636,6 +696,46 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 设置：齿轮（8 齿木棕 + 中心方孔黄芯） ================= */
+    val gear = Def("gear", basePalette, listOf(
+        "................",
+        ".....bbNNbb.....",
+        "...bbNNNNNNbb...",
+        "..bNNNNNNNNNNb..",
+        "..bNNNNNNNNNNb..",
+        ".bNNNNNNNNNNNNb.",
+        ".bNNNbbbbbbNNNb.",
+        "bNNNNbYYYYbNNNNb",
+        ".bNNNbbbbbbNNNb.",
+        ".bNNNNNNNNNNNNb.",
+        "..bNNNNNNNNNNb..",
+        "..bNNNNNNNNNNb..",
+        "...bbNNNNNNbb...",
+        ".....bbNNbb.....",
+        "................",
+        "................",
+    ))
+
+    /* ================= 导出：像素打印机（中部纸张伸出 + 机身 + 出纸口 + 托盘，居中） ================= */
+    val export = Def("export", basePalette, listOf(
+        "................",
+        "................",
+        "....bbbbbbbb....",
+        "...bwwwwwwwwb...",
+        "...bwwwwwwwwb...",
+        "...bbbbbbbbbb...",
+        ".bNNNNNNNNNNNNb.",
+        ".bNNNNNNNNNNNNb.",
+        ".bNNNNNNNNNNNNb.",
+        ".bNNNNYYYYNNNNb.",
+        ".bNNNNNNNNNNNNb.",
+        ".bNNNNNNNNNNNNb.",
+        ".bNbbNNNNNNbbNb.",
+        ".bbbbbbbbbbbbbb.",
+        ".bbbbbbbbbbbbbb.",
+        "................",
+    ))
+
     /* ============ 渲染 ============ */
 
     private val cache = mutableMapOf<String, ImageBitmap>()
@@ -656,7 +756,8 @@ object PixelIcons {
 
     fun defOf(name: String): Def = when (name) {
         "ledger" -> ledger; "coin" -> coin; "coinPile" -> coinPile; "plus" -> plus
-        "chevronR" -> chevronR; "chevronD" -> chevronD; "back" -> back
+        "chevronR" -> chevronR; "chevronL" -> chevronL; "chevronD" -> chevronD; "back" -> back
+        "collapseL" -> collapseL; "collapseR" -> collapseR
         "pencil" -> pencil; "trash" -> trash; "burger" -> burger; "car" -> car
         "bag" -> bag; "gamepad" -> gamepad; "house" -> house; "bills" -> bills
         "medkit" -> medkit; "dots" -> dots; "income" -> income; "expense" -> expense
@@ -664,6 +765,7 @@ object PixelIcons {
         "calendarGold" -> calendarGold; "sun" -> sun; "cloud" -> cloud
         "rain" -> rain; "snow" -> snow; "chest" -> chest
         "windy" -> windy; "statChart" -> statChart
+        "gear" -> gear; "export" -> export
         else -> dots
     }
 

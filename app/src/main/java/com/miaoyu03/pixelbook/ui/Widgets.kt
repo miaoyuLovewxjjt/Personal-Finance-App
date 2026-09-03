@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,6 +87,13 @@ fun pixFont() = androidx.compose.ui.text.font.FontFamily(
         LocalContext.current.resources.getIdentifier("zpix", "font", LocalContext.current.packageName)
     )
 )
+
+/**
+ * 账本专属字体（CompositionLocal）：
+ * 进入某个账本的页面时由 MainActivity 提供其 Ledger.font 对应的字体，
+ * PxText 默认读取它，未提供（主页/弹窗）时回退像素 Zpix。
+ */
+val LocalLedgerFont = androidx.compose.runtime.staticCompositionLocalOf<androidx.compose.ui.text.font.FontFamily?> { null }
 
 /* ---------------- 图标 ---------------- */
 
@@ -245,15 +253,20 @@ fun PxText(
     modifier: Modifier = Modifier,
     align: TextAlign = TextAlign.Start,
     fontStyle: androidx.compose.ui.text.font.FontStyle = androidx.compose.ui.text.font.FontStyle.Normal,
+    font: androidx.compose.ui.text.font.FontFamily? = null,   // 显式指定字体（如字体预览）；默认账本字体/像素
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: androidx.compose.ui.text.style.TextOverflow = androidx.compose.ui.text.style.TextOverflow.Clip,
 ) {
     androidx.compose.material3.Text(
         text = text,
         color = color,
-        fontFamily = pixFont(),
+        fontFamily = font ?: (LocalLedgerFont.current ?: pixFont()),
         fontSize = size,
         fontStyle = fontStyle,
         lineHeight = size * 1.45f,
         textAlign = align,
+        maxLines = maxLines,
+        overflow = overflow,
         modifier = modifier,
     )
 }
@@ -281,10 +294,9 @@ fun PixelTextField(
                     size = Size(size.width - stroke, size.height - stroke),
                     style = Stroke(width = stroke)
                 )
-            }
-            .padding(horizontal = 10.dp),
-        contentAlignment = Alignment.CenterStart,
+            },
     ) {
+        // 占满整个输入框区域：点击框内任意空白处都可聚焦/移动光标
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -292,8 +304,14 @@ fun PixelTextField(
             textStyle = TextStyle(fontFamily = pixFont(), fontSize = 14.sp, color = Px.Brown),
             cursorBrush = SolidColor(Px.Brown),
             keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
+            modifier = Modifier.fillMaxSize(),
             decorationBox = { inner ->
-                Box(contentAlignment = Alignment.CenterStart) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
                     if (value.isEmpty()) PxText(placeholder, size = 13.sp, color = Px.GrayText)
                     inner()
                 }
@@ -597,6 +615,90 @@ private fun hitSegment(offset: Offset, segs: List<DonutSeg>, pxSize: Float): Int
     return segs.lastIndex
 }
 
+/* ---------------- 像素月度双柱图（收入/花销） ---------------- */
+
+/**
+ * 12 个月 × 收入/花销 双柱图。
+ * 每月两根柱并排（左草绿收入 / 右陶土橘花销），点击柱 → onBar(month 1..12, isIncome)。
+ * 下方自动渲染 1..12 月刻度标签。
+ */
+@Composable
+fun PixelBarChart(
+    income: List<Long>,      // 12 个月收入（分），长度不足补 0
+    expense: List<Long>,     // 12 个月花销（分）
+    showIncome: Boolean = true,
+    showExpense: Boolean = true,
+    onBar: (month: Int, isIncome: Boolean) -> Unit = { _, _ -> },
+    modifier: Modifier = Modifier,
+) {
+    val in12 = income + List(12 - income.size) { 0L }
+    val out12 = expense + List(12 - expense.size) { 0L }
+    val maxV = (in12 + out12).maxOrNull()?.coerceAtLeast(1) ?: 1
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .pointerInput(in12, out12, showIncome, showExpense) {
+                    detectTapGestures { o ->
+                        val w = size.width
+                        val mw = w / 12f
+                        val m = (o.x / mw).toInt().coerceIn(0, 11)
+                        val c1 = m * mw + mw * 0.28f   // 收入柱中心
+                        val c2 = m * mw + mw * 0.72f   // 花销柱中心
+                        // 命中带略宽于柱宽（柱宽 0.24mw），点柱附近即可命中
+                        val halfW = mw * 0.2f
+                        when {
+                            showIncome && o.x >= c1 - halfW && o.x <= c1 + halfW -> onBar(m + 1, true)
+                            showExpense && o.x >= c2 - halfW && o.x <= c2 + halfW -> onBar(m + 1, false)
+                        }
+                    }
+                },
+        ) {
+            val baseline = size.height - 1.5.dp.toPx()
+            val plotTop = 2.dp.toPx()
+            val plotH = (size.height - 2.dp.toPx() - 8.dp.toPx()).coerceAtLeast(1f)
+            val mw = size.width / 12f
+
+            // 月份分隔线（淡米色）
+            for (m in 1..11) {
+                drawLine(Px.CreamDark, Offset(m * mw, plotTop), Offset(m * mw, baseline), 1.dp.toPx())
+            }
+            // 基线（深棕）
+            drawLine(Px.Brown, Offset(0f, baseline), Offset(size.width, baseline), 2.dp.toPx())
+
+            // 双柱：每月收入柱在左（草绿）、花销柱在右（陶土橘）
+            val barW = (mw * 0.24f).coerceAtMost(16.dp.toPx())
+            fun drawBars(list: List<Long>, color: Color, isLeft: Boolean) {
+                list.forEachIndexed { i, v ->
+                    if (v <= 0) return@forEachIndexed
+                    val cx = i * mw + if (isLeft) mw * 0.28f else mw * 0.72f
+                    val h = (v.toFloat() / maxV) * plotH
+                    val top = baseline - h
+                    drawRect(color, topLeft = Offset(cx - barW / 2f, top), size = Size(barW, h))
+                    drawRect(
+                        Px.Brown,
+                        topLeft = Offset(cx - barW / 2f, top),
+                        size = Size(barW, h),
+                        style = Stroke(1.5.dp.toPx()),
+                    )
+                }
+            }
+            drawBars(in12, Px.ChartIn, true)
+            drawBars(out12, Px.ChartOut, false)
+        }
+        // 月份刻度
+        Row(modifier = Modifier.fillMaxWidth()) {
+            repeat(12) { i ->
+                Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    PxText("${i + 1}", size = 9.sp, color = Px.GrayText)
+                }
+            }
+        }
+    }
+}
+
 /* ---------------- 页面头部 ---------------- */
 
 @Composable
@@ -605,10 +707,13 @@ fun PixelHeader(
     onBack: (() -> Unit)? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
-    Box(modifier = Modifier.fillMaxWidth().height(56.dp).background(Px.Wood)) {
+    // 高度自适应：标题较长时自动换行（最多 3 行），短标题保持 56dp 基准。
+    // 注意：外层 Box 必须 wrap 内容高度（Row heightIn(min=56.dp)），
+    // 若改用 fillMaxSize 的 Row 会把头部撑满整个屏幕。
+    Box(modifier = Modifier.fillMaxWidth().background(Px.Wood)) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .matchParentSize()
                 .drawBehind {
                     drawRect(Px.WoodDark, size = Size(size.width, size.height / 2))
                     drawRect(Px.Wood, topLeft = Offset(0f, size.height / 2), size = Size(size.width, size.height / 2))
@@ -621,7 +726,10 @@ fun PixelHeader(
                 },
         )
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 左侧占位（返回按钮或等宽占位，保证标题严格居中）
@@ -630,7 +738,18 @@ fun PixelHeader(
             } else {
                 Spacer(Modifier.width(38.dp))
             }
-            PxText(title, size = 17.sp, color = Px.Cream, align = TextAlign.Center, modifier = Modifier.weight(1f))
+            // 标题：居中、与两侧按钮保持间距、长文本换行
+            PxText(
+                title,
+                size = 17.sp,
+                color = Px.Cream,
+                align = TextAlign.Center,
+                maxLines = 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 10.dp),
+            )
             // 右侧占位（trailing 或等宽占位）
             if (trailing != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) { trailing() }
