@@ -288,6 +288,8 @@ fun DepositsScreen(
     var showForm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Deposit?>(null) }
     var deleting by remember { mutableStateOf<Deposit?>(null) }
+    // 金额隐私开关：默认关闭（显示金额）；打开后本页所有具体金额隐藏为 ¥****
+    var hideAmount by remember { mutableStateOf(false) }
 
     val deposits = remember(tick) { store.depList(ledgerId) }
     val total = remember(tick) { store.totalDeposits(ledgerId) }
@@ -295,7 +297,13 @@ fun DepositsScreen(
     val goods = deposits.filter { it.kind == DepositKind.GOODS }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        PixelHeader(title = "存款明细", onBack = onBack)
+        PixelHeader(
+            title = "存款明细",
+            onBack = onBack,
+            trailing = {
+                AmountSwitch(hide = hideAmount, onToggle = { hideAmount = !hideAmount })
+            },
+        )
 
         // 总存款卡
         PixelPanel(
@@ -312,7 +320,10 @@ fun DepositsScreen(
             ) {
                 PixelIcon("coinPile", size = 30.dp)
                 Spacer(Modifier.width(8.dp))
-                PxText("总存款 ${Fmt.yen(total)}", size = 16.sp)
+                PxText(
+                    if (hideAmount) "总存款 ¥****" else "总存款 ${Fmt.yen(total)}",
+                    size = 16.sp,
+                )
             }
         }
 
@@ -321,6 +332,7 @@ fun DepositsScreen(
                 title = "金钱类",
                 icon = "coinPile",
                 list = money,
+                hideAmount = hideAmount,
                 onEdit = { editing = it },
                 onDelete = { deleting = it },
             )
@@ -328,6 +340,7 @@ fun DepositsScreen(
                 title = "非金钱类",
                 icon = "gift",
                 list = goods,
+                hideAmount = hideAmount,
                 onEdit = { editing = it },
                 onDelete = { deleting = it },
             )
@@ -373,6 +386,7 @@ private fun LazyListScope.DepositGroup(
     title: String,
     icon: String,
     list: List<Deposit>,
+    hideAmount: Boolean,
     onEdit: (Deposit) -> Unit,
     onDelete: (Deposit) -> Unit,
 ) {
@@ -393,7 +407,7 @@ private fun LazyListScope.DepositGroup(
         Spacer(Modifier.height(8.dp))
     }
     items(list, key = { it.id }) { d ->
-        DepositRow(d = d, onEdit = { onEdit(d) }, onDelete = { onDelete(d) })
+        DepositRow(d = d, hideAmount = hideAmount, onEdit = { onEdit(d) }, onDelete = { onDelete(d) })
         Spacer(Modifier.height(10.dp))
     }
 }
@@ -401,6 +415,7 @@ private fun LazyListScope.DepositGroup(
 @Composable
 private fun DepositRow(
     d: Deposit,
+    hideAmount: Boolean,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -424,7 +439,11 @@ private fun DepositRow(
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    PxText(Fmt.yen(d.value), size = 14.sp, color = Px.WoodDark)
+                    PxText(
+                        if (hideAmount) "¥****" else Fmt.yen(d.value),
+                        size = 14.sp,
+                        color = Px.WoodDark,
+                    )
                     Spacer(Modifier.height(2.dp))
                     PxText(Fmt.dateYmd(d.date), size = 11.sp, color = Px.GrayText)
                 }
@@ -949,3 +968,42 @@ private fun InputDialog(
     }
 }
           
+
+/* ================================================================
+ * 金额显示开关（存款明细页右上角）：显示 / 隐藏两段式，像素风
+ * ================================================================ */
+
+@Composable
+private fun AmountSwitch(hide: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .background(Px.Cream)
+            .drawBehind {
+                val stroke = 2.dp.toPx()
+                drawRect(
+                    Px.Brown,
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke),
+                )
+            }
+            .padding(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AmountSwitchSeg(label = "显示", selected = !hide, onClick = { if (hide) onToggle() })
+        AmountSwitchSeg(label = "隐藏", selected = hide, onClick = { if (!hide) onToggle() })
+    }
+}
+
+@Composable
+private fun AmountSwitchSeg(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(if (selected) Px.Grass.copy(alpha = 0.35f) else Color.Transparent)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        PxText(label, size = 11.sp, color = if (selected) Px.GrassDark else Px.GrayText)
+    }
+}

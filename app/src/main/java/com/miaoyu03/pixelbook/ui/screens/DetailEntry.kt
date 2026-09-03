@@ -822,6 +822,8 @@ fun EntryScreen(
     var tick by remember { mutableIntStateOf(0) }
     var curDate by remember { mutableStateOf(date) }
     var showCal by remember { mutableStateOf(false) }
+    // 收支切换：默认「支出」（新增开销是最高频操作）；两个方向的表单状态各自保留
+    var isInTab by remember { mutableStateOf(false) }
 
     // 表单状态（收入 / 支出各一组）
     val inState = remember { EntryFormState(true) }
@@ -886,34 +888,41 @@ fun EntryScreen(
             }
             Spacer(Modifier.height(14.dp))
 
-            // 4. 收入录入区
-            PixelSectionTitle("收入", icon = "income", color = Px.GrassDark)
-            Spacer(Modifier.height(8.dp))
-            TxFormFields(
-                isIn = true,
-                time = inState.time, onTime = { inState.time = it },
-                cat = inState.cat, onCat = { inState.cat = it },
-                customCat = inState.customCat, onCustomCat = { inState.customCat = it },
-                amount = inState.amount, onAmount = { inState.amount = it },
-                name = inState.name, onName = { inState.name = it },
-                note = inState.note, onNote = { inState.note = it },
-                cats = inCats,
-            )
-            Spacer(Modifier.height(16.dp))
+            // 3. 收支切换（默认支出；收入/支出状态各自保留，保存时都提交）
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                EntryTabButton("收入", icon = "income", active = isInTab, onClick = { isInTab = true }, modifier = Modifier.weight(1f))
+                EntryTabButton("支出", icon = "expense", active = !isInTab, onClick = { isInTab = false }, modifier = Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(12.dp))
 
-            // 5. 支出录入区
-            PixelSectionTitle("支出", icon = "expense", color = Px.WoodDark)
-            Spacer(Modifier.height(8.dp))
-            TxFormFields(
-                isIn = false,
-                time = outState.time, onTime = { outState.time = it },
-                cat = outState.cat, onCat = { outState.cat = it },
-                customCat = outState.customCat, onCustomCat = { outState.customCat = it },
-                amount = outState.amount, onAmount = { outState.amount = it },
-                name = outState.name, onName = { outState.name = it },
-                note = outState.note, onNote = { outState.note = it },
-                cats = outCats,
-            )
+            // 4. 录入区（收支二选一展示）
+            if (isInTab) {
+                PxText("收入录入", size = 12.sp, color = Px.GrayText)
+                Spacer(Modifier.height(8.dp))
+                TxFormFields(
+                    isIn = true,
+                    time = inState.time, onTime = { inState.time = it },
+                    cat = inState.cat, onCat = { inState.cat = it },
+                    customCat = inState.customCat, onCustomCat = { inState.customCat = it },
+                    amount = inState.amount, onAmount = { inState.amount = it },
+                    name = inState.name, onName = { inState.name = it },
+                    note = inState.note, onNote = { inState.note = it },
+                    cats = inCats,
+                )
+            } else {
+                PxText("支出录入", size = 12.sp, color = Px.GrayText)
+                Spacer(Modifier.height(8.dp))
+                TxFormFields(
+                    isIn = false,
+                    time = outState.time, onTime = { outState.time = it },
+                    cat = outState.cat, onCat = { outState.cat = it },
+                    customCat = outState.customCat, onCustomCat = { outState.customCat = it },
+                    amount = outState.amount, onAmount = { outState.amount = it },
+                    name = outState.name, onName = { outState.name = it },
+                    note = outState.note, onNote = { outState.note = it },
+                    cats = outCats,
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
             // 6. 今日已记（可编辑/删除）
@@ -1056,5 +1065,36 @@ private fun WeatherIconButton(w: Weather, selected: Boolean, onClick: () -> Unit
         contentAlignment = Alignment.Center,
     ) {
         PixelIcon(w.iconName(), size = 28.dp)
+    }
+}
+
+/** 记一笔页收支切换按钮（选中高亮描边） */
+@Composable
+private fun EntryTabButton(
+    label: String,
+    icon: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .height(42.dp)
+            .background(if (active) Px.Grass.copy(alpha = 0.28f) else Px.Cream)
+            .clickable(onClick = onClick)
+            .drawBehind {
+                val stroke = if (active) 3.dp.toPx() else 2.dp.toPx()
+                drawRect(
+                    if (active) Px.Grass else Px.Brown,
+                    style = Stroke(width = stroke)
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PixelIcon(icon, size = 18.dp)
+            Spacer(Modifier.width(6.dp))
+            PxText(label, size = 14.sp, color = if (active) Px.GrassDark else Px.Brown)
+        }
     }
 }
