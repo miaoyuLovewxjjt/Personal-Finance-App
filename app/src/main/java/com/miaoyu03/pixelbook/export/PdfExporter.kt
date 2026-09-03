@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.res.ResourcesCompat
 import com.miaoyu03.pixelbook.R
+import com.miaoyu03.pixelbook.data.AppMeta
 import com.miaoyu03.pixelbook.data.Deposit
 import com.miaoyu03.pixelbook.data.DepositKind
 import com.miaoyu03.pixelbook.data.Fmt
@@ -599,7 +600,8 @@ object PdfExporter {
             line.color = Px.GrayText.toArgb()
             line.strokeWidth = 1f
             cv.drawLine(M, PAGE_H - 44f, PAGE_W - M, PAGE_H - 44f, line)
-            txt.draw(cv, "像素记账", M, PAGE_H - 32f, 10f, Px.GrayText.toArgb())
+            // 页脚左侧：项目 git 地址（右侧页码）
+            txt.draw(cv, AppMeta.GIT_URL, M, PAGE_H - 32f, 10f, Px.GrayText.toArgb())
             txt.draw(cv, "第 $pageNo 页", PAGE_W - M, PAGE_H - 32f, 10f, Px.GrayText.toArgb(), Paint.Align.RIGHT)
             // 整页位图 → PDF 画布
             val bmp = pageBitmap

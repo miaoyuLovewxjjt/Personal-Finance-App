@@ -3,6 +3,12 @@ package com.miaoyu03.pixelbook.data
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
+/** 应用签名信息（设置页展示 / PDF 页脚） */
+object AppMeta {
+    const val VERSION = "v1.0"                        // 与 git tag 保持一致
+    const val GIT_URL = "https://github.com/miaoyuLovewxjjt/Personal-Finance-App"
+}
+
 /** 金额一律以「分」(Long) 存储，避免浮点误差 */
 typealias Cents = Long
 

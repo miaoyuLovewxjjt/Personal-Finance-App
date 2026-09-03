@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.miaoyu03.pixelbook.data.AppMeta
 import com.miaoyu03.pixelbook.data.Deposit
 import com.miaoyu03.pixelbook.data.DepositKind
 import com.miaoyu03.pixelbook.data.Fmt
@@ -764,6 +765,20 @@ fun SettingsDialog(
                 onClick = { showCats = true },
                 bg = Px.Yellow, height = 40.dp, icon = "pencil",
                 modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+            PxText("签名", size = 14.sp)
+            Spacer(Modifier.height(6.dp))
+            PxText("版本：${AppMeta.VERSION}", size = 12.sp, color = Px.Wood)
+            Spacer(Modifier.height(4.dp))
+            PxText("GitHub：${AppMeta.GIT_URL}", size = 12.sp, color = Px.Wood)
+            Spacer(Modifier.height(14.dp))
+            // 底部提示（斜体）
+            PxText(
+                "若有问题可私信小红书@4987988019",
+                size = 11.sp,
+                color = Px.GrayText,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
             )
         }
     }
