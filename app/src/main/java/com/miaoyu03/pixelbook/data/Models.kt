@@ -19,6 +19,7 @@ data class Ledger(
     val createdAt: String = LocalDate.now().toString(),
     val syncedMonths: Set<String> = emptySet(),   // 已执行过「一键同步」的月份 "2026-09"
     val font: String = "pixel", // 账本专属字体（见 LedgerFonts：pixel/cute/kaiti/songti）
+    val file: String = "",      // 账本单文件文件名（账本名_创建时间戳.json，外部存储用）
 )
 
 data class Tx(

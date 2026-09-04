@@ -39,6 +39,7 @@ import com.miaoyu03.pixelbook.data.TxDir
 import com.miaoyu03.pixelbook.ui.DonutSeg
 import com.miaoyu03.pixelbook.ui.Px
 import com.miaoyu03.pixelbook.ui.PixelBarChart
+import com.miaoyu03.pixelbook.ui.PixelConfirm
 import com.miaoyu03.pixelbook.ui.PixelButton
 import com.miaoyu03.pixelbook.ui.PixelDonut
 import com.miaoyu03.pixelbook.ui.PixelDropdown
@@ -128,6 +129,7 @@ fun MonthScreen(
 ) {
     var ym by remember { mutableStateOf(ym) }
     var tick by remember { mutableIntStateOf(0) }
+    var confirmReset by remember { mutableStateOf(false) }
 
     val all = remember(tick) { store.txList(ledgerId) }
     val ymObj = YearMonth.parse(ym)
@@ -154,6 +156,24 @@ fun MonthScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         PixelHeader(title = "月度总结", onBack = onBack)
 
+        if (confirmReset) {
+            PixelConfirm(
+                title = "重置本月归档",
+                message = "将删除本月已归档的「攒钱」存款记录并清除归档标记，之后可以重新一键同步。",
+                confirmText = "重置",
+                onConfirm = {
+                    if (store.resetArchive(ledgerId, ym)) {
+                        tick++
+                        store.toast("已重置本月归档，可重新一键同步")
+                    } else {
+                        store.toast("重置失败：存款删除未成功，请检查存储后重试")
+                    }
+                    confirmReset = false
+                },
+                onDismiss = { confirmReset = false },
+            )
+        }
+
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -172,35 +192,39 @@ fun MonthScreen(
             )
             Spacer(Modifier.height(14.dp))
 
-            // 一键同步
-            PixelButton(
-                text = if (synced) "本月已归档 ✓" else "一键同步",
-                icon = "coinPile",
-                onClick = {
-                    val balance = stats.income - stats.expense
-                    if (balance <= 0) {
-                        store.toast("本月结余不足，没有可归档的攒钱")
-                        return@PixelButton
-                    }
-                    store.addDep(
-                        com.miaoyu03.pixelbook.data.Deposit(
-                            id = "d${System.currentTimeMillis()}",
-                            ledgerId = ledgerId,
-                            date = LocalDate.now(),
-                            kind = com.miaoyu03.pixelbook.data.DepositKind.MONEY,
-                            name = "攒钱",
-                            note = "${ymObj.year}.${ymObj.monthValue} 月收入已归档 ${moneyInt(balance)} 元",
-                            value = balance,
-                        )
+            // 一键同步 / 已归档（可重置）
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PixelButton(
+                    text = if (synced) "本月已归档 ✓" else "一键同步",
+                    icon = "coinPile",
+                    onClick = {
+                        val balance = stats.income - stats.expense
+                        if (balance <= 0) {
+                            store.toast("本月结余不足，没有可归档的攒钱")
+                            return@PixelButton
+                        }
+                        if (store.archiveMonth(ledgerId, ym, balance)) {
+                            store.markSynced(ledgerId, ym)
+                            tick++
+                            store.toast("已把结余 ${moneyInt(balance)} 元归档到存款明细")
+                        } else {
+                            store.toast("归档失败：存款写入未成功，请检查存储后重试")
+                        }
+                    },
+                    enabled = !synced,
+                    bg = Px.Grass,
+                    modifier = Modifier.weight(1f),
+                )
+                if (synced) {
+                    PixelButton(
+                        text = "重置",
+                        icon = "trash",
+                        onClick = { confirmReset = true },
+                        bg = Px.Clay,
+                        modifier = Modifier.width(110.dp),
                     )
-                    store.markSynced(ledgerId, ym)
-                    tick++
-                    store.toast("已把结余 ${moneyInt(balance)} 元归档到存款明细")
-                },
-                enabled = !synced,
-                bg = Px.Grass,
-                modifier = Modifier.fillMaxWidth(),
-            )
+                }
+            }
             Spacer(Modifier.height(14.dp))
 
             // 月度总览：总支出/总收入/总结余 横排（文字左、数字右、无底色）
