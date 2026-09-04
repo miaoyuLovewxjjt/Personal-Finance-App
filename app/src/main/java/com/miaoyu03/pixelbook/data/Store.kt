@@ -8,6 +8,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * 本地数据层：Key-Value JSON 存储。
@@ -24,7 +26,130 @@ class Store(context: Context) {
     /** 配置（存储目录选择、演示数据标记）与应用数据分离 */
     private val cfg = appContext.getSharedPreferences(CFG_NAME, Context.MODE_PRIVATE)
     /** 当前数据存储后端 */
-    private var io: LedgerIO = loadIo()
+    private var io: LedgerIO
+    /** 最近一次写入错误（设置页展示，toast 错过也能查） */
+    @Volatile private var lastWriteError: String? = null
+
+    init {
+        io = loadIo()
+        android.util.Log.d("PdfExp", "init: io=${io.javaClass.simpleName} ledgers=${ledgers().size}")
+        // 启动时自动恢复：外部目录里有流水/存款文件但缺账本定义（如 ledgers 未拷贝）
+        // 时自动补建账本条目（授权在持久化后枚举才能可靠工作，重启后自愈）
+        autoRestore()
+        android.util.Log.d("PdfExp", "after autoRestore: ledgers=${ledgers().size}")
+    }
+
+    /** 目标为外部目录且缺账本定义时：目录里存在流水/存款数据 → 自动补建账本 */
+    private fun autoRestore() {
+        val cur = io
+        if (cur is SafLedgerIO) {
+            try {
+                if (cur.read(KEY_LEDGERS) == null) rebuildLedgers(cur)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** 解析目标存储的账本列表：备份文件（账本名_时间戳.json）逐个恢复 + 标准数据（ledgers/rebuild）合并 */
+    private fun resolveTargetLedgers(target: LedgerIO): List<Ledger> {
+        // 1) 备份文件恢复：每份备份 = 一本账本（内容自带账本声明，多文件多账本一一对应）
+        val fromBackups = mutableListOf<Ledger>()
+        if (target is SafLedgerIO) {
+            target.listBackups().forEach { (_, text) ->
+                runCatching {
+                    val o = JSONObject(text)
+                    if (o.optString("app") != "pixelbook" || o.optString("type") != "backup") return@forEach
+                    val lo = o.getJSONObject("ledger")
+                    val synced = mutableSetOf<String>()
+                    runCatching {
+                        val sa = lo.optJSONArray("synced") ?: JSONArray()
+                        for (j in 0 until sa.length()) synced.add(sa.getString(j))
+                    }
+                    val l = Ledger(
+                        id = lo.getString("id"), name = lo.getString("name"),
+                        coverColor = lo.optInt("cover", 0), font = lo.optString("font", "pixel"),
+                        syncedMonths = synced,
+                    )
+                    // 把备份里的流水/存款/天气固化回标准 key 文件，该账本成为目录正式数据
+                    val d = o.optJSONObject("data")
+                    d?.optString("txs")?.takeIf { it.isNotBlank() }?.let { target.write(txKey(l.id), it) }
+                    d?.optString("dps")?.takeIf { it.isNotBlank() }?.let { target.write(dpKey(l.id), it) }
+                    d?.optString("wx")?.takeIf { it.isNotBlank() }?.let { target.write(wxKey(l.id), it) }
+                    fromBackups.add(l)
+                }
+            }
+            if (fromBackups.isNotEmpty()) android.util.Log.d("PdfExp", "backups restored: ${fromBackups.size}")
+        }
+        // 2) 标准数据：ledgers.json 优先；缺失但有 txs/dps 文件 → 按内容 ld 自动补建
+        var list = target.read(KEY_LEDGERS)
+            ?.let { runCatching { parseLedgers(it) }.getOrDefault(emptyList()) }
+        if (list == null) {
+            rebuildLedgers(target)
+            list = target.read(KEY_LEDGERS)
+                ?.let { runCatching { parseLedgers(it) }.getOrDefault(emptyList()) } ?: emptyList()
+        }
+        // 3) 合并：同 id 时以备份里的真实名称/封面/字体为准（rebuild 的"恢复账本xx"只是占位名）；
+        //    备份里有而账本表没有的 → 追加进账本表；发生纠正/补充 → 回写账本表文件
+        val byId = fromBackups.associateBy { it.id }
+        val corrected = list.map { byId[it.id] ?: it }
+        val extra = fromBackups.filterNot { fb -> corrected.any { it.id == fb.id } }
+        val final = corrected + extra
+        if (final != list) {
+            target.write(KEY_LEDGERS, ledgersToJson(final))
+            list = final
+        }
+        return list
+    }
+
+    /** 从账本 id 前缀（epoch 毫秒）解析创建时间戳 yyyyMMdd_HHmmss；解析失败用当前时间兜底 */
+    private fun createStamp(id: String): String {
+        val ms = id.substringBefore("_").toLongOrNull()
+        if (ms != null) {
+            val fromId = runCatching {
+                DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(
+                    LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), java.time.ZoneId.systemDefault())
+                )
+            }.getOrNull()
+            if (fromId != null) return fromId
+        }
+        return DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
+    }
+
+    /** 备份/文件名清洗：非法字符与空白替换为下划线，截断防超长 */
+    private fun sanitizeFileName(name: String): String {
+        val clean = name.trim()
+            .replace(Regex("[\\\\/:*?\"<>|\\s]"), "_")
+            .take(30)
+        return clean.ifEmpty { "账本" }
+    }
+
+    /** 从 txs/dps 文件的账本 id 自动补建 ledgers 条目（id 以文件内容里的 ld 为准，文件名带变体也不影响） */
+    private fun rebuildLedgers(target: LedgerIO) {
+        val ids = mutableSetOf<String>()
+        target.keys().forEach { k ->
+            if (k.startsWith("txs.") || k.startsWith("dps.")) {
+                val text = target.read(k) ?: return@forEach
+                runCatching {
+                    val arr = JSONArray(text)
+                    for (i in 0 until arr.length()) {
+                        val ld = arr.getJSONObject(i).optString("ld", "")
+                        if (ld.isNotEmpty()) ids.add(ld)
+                    }
+                }
+            }
+        }
+        if (ids.isNotEmpty()) {
+            val arr = JSONArray()
+            ids.forEach { id ->
+                arr.put(JSONObject().apply {
+                    put("id", id)
+                    put("name", "恢复账本${id.takeLast(4)}")
+                    put("cover", 0); put("font", "pixel"); put("synced", JSONArray())
+                })
+            }
+            target.write(KEY_LEDGERS, arr.toString())
+        }
+    }
 
     companion object {
         private const val CFG_NAME = "pixelbook_cfg"
@@ -33,6 +158,9 @@ class Store(context: Context) {
         private const val KEY_CATS_OUT = "cats.out"    // 花销类别表
         private const val KEY_SEEDED = "demo_seeded_v1"
         private const val KEY_STORAGE_TREE = "storage_tree"
+        private const val KEY_LAST_SWITCH = "last_switch_result"
+        private const val KEY_PREV_STORAGE_TREE = "prev_storage_tree"
+        private const val KEY_STORAGE_HISTORY = "storage_history"
         const val MAX_LEDGER_NAME = 30   // 账本名称字符上限
     }
 
@@ -51,44 +179,207 @@ class Store(context: Context) {
         return "外部目录：$name"
     }
 
+    /** 账本存储信息：位置描述 + 数据占用字节数（流水/存款/天气 JSON） */
+    fun ledgerStorageInfo(id: String): Pair<String, Long> {
+        val bytes = listOf(txKey(id), dpKey(id), wxKey(id)).sumOf { k ->
+            io.read(k)?.toByteArray(Charsets.UTF_8)?.size?.toLong() ?: 0L
+        }
+        return storagePath() to bytes
+    }
+
+    /** 存储绝对路径：内部存储为应用数据目录；外部目录解析为 /storage/... 真实路径 */
+    fun storagePath(): String {
+        val uri = cfg.getString(KEY_STORAGE_TREE, null) ?: return appContext.dataDir.absolutePath
+        return treeUriToPath(uri) ?: runCatching {
+            DocumentFile.fromTreeUri(appContext, Uri.parse(uri))?.name?.let { "/storage/emulated/0/$it" }
+        }.getOrNull() ?: uri
+    }
+
+    /** SAF 树 URI → 绝对路径（如 primary:Documents → /storage/emulated/0/Documents） */
+    private fun treeUriToPath(uri: String): String? = runCatching {
+        val tree = Uri.parse(uri)
+        val docId = android.provider.DocumentsContract.getTreeDocumentId(tree)
+        val volume = docId.substringBefore(":", "")
+        val rest = docId.substringAfter(":", "")
+        val base = if (volume == "primary") {
+            android.os.Environment.getExternalStorageDirectory().absolutePath
+        } else {
+            "/storage/$volume"
+        }
+        "$base/$rest".removeSuffix("/")
+    }.getOrNull()
+
     /**
      * 切换数据存储（null = 恢复应用内部存储）。
-     * 先读取全部数据再写入新后端，全部成功才切换；失败返回 false，原存储不受影响。
+     * 目标目录为空 → 迁移当前全部数据过去；目标目录已有数据（换机/重装后指向
+     * 旧目录）→ 直接采用目标数据（恢复），不回写覆盖。
+     * 失败返回 false，原存储不受影响。
      */
-    fun switchStorage(treeUri: Uri?): Boolean {
+    /**
+     * 切换数据存储（null = 恢复应用内部存储）。
+     * 返回结果描述：成功时 = "ok:载入N个账本 / ok:已迁移 / ok:恢复N个账本"；
+     * 失败时 = 错误说明（"存储目录不可用"、"写入失败"等）。
+     */
+    fun switchStorage(treeUri: Uri?): String {
         val newIo: LedgerIO = if (treeUri == null) {
             PrefsLedgerIO(appContext)
         } else {
-            val root = DocumentFile.fromTreeUri(appContext, treeUri)
-                ?.takeIf { it.exists() && it.canWrite() } ?: return false
+            // 只要求目录存在；部分 ROM/文件管理器 provider 的 canWrite() 会误报 false，
+            // 若真写不了，后面的写入步骤会给出具体失败原因
+            val root = runCatching {
+                DocumentFile.fromTreeUri(appContext, treeUri)?.takeIf { it.exists() }
+            }.onFailure { e ->
+                android.util.Log.w("PdfExp", "switch target check failed: ${e.message}")
+            }.getOrNull() ?: return "无法访问所选目录"
+            android.util.Log.d(
+                "PdfExp",
+                "switch target=$treeUri canWrite=${runCatching { root.canWrite() }.getOrDefault(false)}"
+            )
             try {
                 appContext.contentResolver.takePersistableUriPermission(
                     treeUri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.w("PdfExp", "takePersistable failed", e)
+            }
             SafLedgerIO(appContext, root)
         }
-        // 迁移：枚举全部数据 key → 读旧写新（任一失败即放弃，保留原存储）
         try {
-            io.keys().mapNotNull { k -> io.read(k)?.let { k to it } }
-                .forEach { (k, v) -> newIo.write(k, v) }
+            android.util.Log.d("PdfExp", "targetHasLedgers=${newIo.read(KEY_LEDGERS) != null} keys=${newIo.keys().size}")
+
+            // ===== 1) 备份：当前每本账本 → 目标 {账本名}_{时间戳}.json（仅外部目录） =====
+            val curLedgers = io.read(KEY_LEDGERS)
+                ?.let { runCatching { parseLedgers(it) }.getOrDefault(emptyList()) } ?: emptyList()
+            var backedUp = 0
+            if (newIo is SafLedgerIO && curLedgers.isNotEmpty()) {
+                curLedgers.forEach { l ->
+                    val stamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").format(LocalDateTime.now())
+                    val created = createStamp(l.id)
+                    val bundle = JSONObject().apply {
+                        put("app", "pixelbook"); put("type", "backup")
+                        put("time", stamp); put("created", created)
+                        put("ledger", JSONObject().apply {
+                            put("id", l.id); put("name", l.name); put("cover", l.coverColor); put("font", l.font)
+                            put("synced", JSONArray(l.syncedMonths.toList()))
+                        })
+                        put("data", JSONObject().apply {
+                            io.read(txKey(l.id))?.let { put("txs", it) }
+                            io.read(dpKey(l.id))?.let { put("dps", it) }
+                            io.read(wxKey(l.id))?.let { put("wx", it) }
+                        })
+                    }
+                    // 备份文件 = 账本名 + 账本创建时间戳（同一本账随时备份同名，覆盖更新不产生副本）
+                    newIo.writeBackup("${sanitizeFileName(l.name)}_$created.json", bundle.toString())
+                    backedUp++
+                }
+                android.util.Log.d("PdfExp", "backup $backedUp ledgers -> target")
+            }
+            val backupNote = if (backedUp > 0) "已备份 $backedUp 本账本；" else ""
+
+            // ===== 2) 载入/合并：目标账本 + 当前账本（同 id 去重，目标优先） =====
+            val targetName = if (newIo is SafLedgerIO) "新目录" else "内部存储"
+            val targetLedgers = resolveTargetLedgers(newIo)
+            val moving = curLedgers.filterNot { l -> targetLedgers.any { it.id == l.id } }
+            val merged = targetLedgers + moving
+            var result: String
+            if (moving.isNotEmpty()) {
+                // 当前账本（目标里没有的）→ 追加进目标账本表 + 数据文件写入目标
+                newIo.write(KEY_LEDGERS, ledgersToJson(merged))
+                moving.forEach { l ->
+                    io.read(txKey(l.id))?.let { newIo.write(txKey(l.id), it) }
+                    io.read(dpKey(l.id))?.let { newIo.write(dpKey(l.id), it) }
+                    io.read(wxKey(l.id))?.let { newIo.write(wxKey(l.id), it) }
+                }
+                android.util.Log.d("PdfExp", "merged: target ${targetLedgers.size} + moving ${moving.size} = ${merged.size}")
+                result = if (targetLedgers.isEmpty())
+                    "ok:${backupNote}数据已迁移到$targetName（共 ${merged.size} 本账本）"
+                else
+                    "ok:${backupNote}目标与当前合并，共 ${merged.size} 本账本"
+            } else {
+                result = if (targetLedgers.isEmpty())
+                    "ok:已切换到$targetName（无数据）"
+                else
+                    "ok:${backupNote}已载入${targetName}的 ${targetLedgers.size} 本账本"
+            }
+            // 记录这次切换前的旧外部存储目录（历史目录列表 + 上次存储），旧为内部存储则无
+            val prevUri = runCatching { (io as? SafLedgerIO)?.uri?.toString() }.getOrNull()
+            io = newIo
+            val editor = cfg.edit()
+            if (treeUri == null) editor.remove(KEY_STORAGE_TREE)
+            else editor.putString(KEY_STORAGE_TREE, treeUri.toString())
+            editor.putString(KEY_LAST_SWITCH, result)
+            if (prevUri != null) editor.putString(KEY_PREV_STORAGE_TREE, prevUri)
+            else editor.remove(KEY_PREV_STORAGE_TREE)
+            // 历史目录（去重）
+            if (prevUri != null) {
+                val hist = cfg.getStringSet(KEY_STORAGE_HISTORY, emptySet()).orEmpty().toMutableSet()
+                hist.add(prevUri)
+                editor.putStringSet(KEY_STORAGE_HISTORY, hist)
+            }
+            editor.apply()
+            return result
         } catch (e: Exception) {
-            return false
+            android.util.Log.e("PdfExp", "switch failed", e)
+            val msg = "切换失败：${e.message ?: e.javaClass.simpleName}"
+            cfg.edit().putString(KEY_LAST_SWITCH, msg).apply()
+            return msg
         }
-        io = newIo
-        cfg.edit().let { e ->
-            if (treeUri == null) e.remove(KEY_STORAGE_TREE)
-            else e.putString(KEY_STORAGE_TREE, treeUri.toString())
-        }.apply()
-        return true
+    }
+
+    /** 上次切换结果（设置页展示，失败时便于直接回报给开发） */
+    fun lastSwitchResult(): String? = cfg.getString(KEY_LAST_SWITCH, null)
+
+    /** 上次使用的外部存储目录名（设置页展示，供用户自行去文件管理器删除） */
+    fun prevStorageDescription(): String? = cfg.getString(KEY_PREV_STORAGE_TREE, null)?.let { uri ->
+        runCatching { DocumentFile.fromTreeUri(appContext, Uri.parse(uri))?.name }.getOrNull() ?: uri
+    }
+
+    /** 上次使用的外部存储绝对路径（如 /storage/emulated/0/xxx） */
+    fun prevStoragePath(): String? = cfg.getString(KEY_PREV_STORAGE_TREE, null)?.let {
+        treeUriToPath(it) ?: it
+    }
+
+    /** 历史使用过的外部目录列表：(uri, 目录名, 绝对路径)，供用户自行前往查看/删除数据 */
+    fun storageHistory(): List<Triple<String, String, String>> =
+        cfg.getStringSet(KEY_STORAGE_HISTORY, emptySet()).orEmpty()
+            .mapNotNull { uri ->
+                val name = runCatching { DocumentFile.fromTreeUri(appContext, Uri.parse(uri))?.name }
+                    .getOrNull()?.takeIf { it.isNotBlank() } ?: uri
+                uri to (name to (treeUriToPath(uri) ?: uri))
+            }
+            .map { Triple(it.first, it.second.first, it.second.second) }
+            .sortedBy { it.second }
+
+    /** 存储自检：向当前存储写一个探针文件并读回再删除，验证可写可读 */
+    fun storageSelfTest(): String {
+        val cur = io
+        return try {
+            cur.write("selftest", "pixelbook ok")
+            val back = cur.read("selftest")
+            cur.remove("selftest")
+            if (back == "pixelbook ok") "自检通过：目录可读可写"
+            else "写入成功但读回内容异常（$back）"
+        } catch (e: Exception) {
+            android.util.Log.e("PdfExp", "selftest failed", e)
+            "自检失败：${e.message ?: e.javaClass.simpleName}"
+        }
     }
 
     private fun loadIo(): LedgerIO {
         val uri = cfg.getString(KEY_STORAGE_TREE, null)
         if (uri != null) {
-            val root = DocumentFile.fromTreeUri(appContext, Uri.parse(uri))
-            if (root != null && root.exists() && root.canWrite()) {
+            val granted = try {
+                appContext.contentResolver.persistedUriPermissions.any { it.uri == Uri.parse(uri) }
+            } catch (_: Exception) { false }
+            android.util.Log.d("PdfExp", "loadIo tree=$uri granted=$granted")
+            val root = runCatching {
+                DocumentFile.fromTreeUri(appContext, Uri.parse(uri))
+                    ?.takeIf { it.exists() && it.canWrite() }
+            }.onFailure { e ->
+                android.util.Log.w("PdfExp", "loadIo tree unusable: ${e.message}", e)
+            }.getOrNull()
+            if (root != null) {
                 try {
                     appContext.contentResolver.takePersistableUriPermission(
                         Uri.parse(uri),
@@ -113,7 +404,7 @@ class Store(context: Context) {
     fun addLedger(name: String, coverIdx: Int): Ledger {
         val l = Ledger(id = newId(), name = name.trim(), coverColor = coverIdx)
         val list = ledgers().toMutableList().apply { add(l) }
-        io.write(KEY_LEDGERS, ledgersToJson(list))
+        safeWrite(KEY_LEDGERS, ledgersToJson(list))
         return l
     }
 
@@ -121,7 +412,7 @@ class Store(context: Context) {
         val list = ledgers().map {
             if (it.id == id) it.copy(name = name.trim()) else it
         }
-        io.write(KEY_LEDGERS, ledgersToJson(list))
+        safeWrite(KEY_LEDGERS, ledgersToJson(list))
     }
 
     /** 编辑账本：名称 / 字体 / 封面颜色 */
@@ -129,13 +420,13 @@ class Store(context: Context) {
         val list = ledgers().map {
             if (it.id == id) it.copy(name = name.trim(), font = font, coverColor = coverColor) else it
         }
-        io.write(KEY_LEDGERS, ledgersToJson(list))
+        safeWrite(KEY_LEDGERS, ledgersToJson(list))
     }
 
     fun deleteLedger(id: String) {
         val list = ledgers().filterNot { it.id == id }
-        io.write(KEY_LEDGERS, ledgersToJson(list))
-        io.remove(txKey(id)); io.remove(dpKey(id)); io.remove(wxKey(id))
+        safeWrite(KEY_LEDGERS, ledgersToJson(list))
+        runCatching { io.remove(txKey(id)) }; runCatching { io.remove(dpKey(id)) }; runCatching { io.remove(wxKey(id)) }
     }
 
     /* ================= 类别维护（收入/花销：全局各一张表，可增删改） ================= */
@@ -167,7 +458,7 @@ class Store(context: Context) {
     }
 
     private fun writeCats(key: String, list: List<String>) {
-        io.write(key, JSONArray(list).toString())
+        safeWrite(key, JSONArray(list).toString())
     }
 
     private fun addCat(key: String, defaults: List<String>, name: String): Boolean {
@@ -269,7 +560,7 @@ class Store(context: Context) {
         val map = io.read(wxKey(ledgerId))
         val obj = if (map.isNullOrEmpty()) JSONObject() else JSONObject(map)
         obj.put(date.toString(), w.name)
-        io.write(wxKey(ledgerId), obj.toString())
+        safeWrite(wxKey(ledgerId), obj.toString())
     }
 
     /* ================= 一键同步标记 ================= */
@@ -281,8 +572,24 @@ class Store(context: Context) {
         val list = ledgers().map {
             if (it.id == ledgerId) it.copy(syncedMonths = it.syncedMonths + ym) else it
         }
-        io.write(KEY_LEDGERS, ledgersToJson(list))
+        safeWrite(KEY_LEDGERS, ledgersToJson(list))
     }
+
+    /* ================= 写入兜底 ================= */
+
+    /** 写入封装：失败时记日志 + toast 提示，不抛异常（避免 UI 崩溃）；switchStorage/rebuild 内部流程仍直接调 io.write 以感知失败 */
+    private fun safeWrite(key: String, value: String) {
+        try {
+            io.write(key, value)
+        } catch (e: Exception) {
+            android.util.Log.e("PdfExp", "write failed: $key -> ${e.message}", e)
+            lastWriteError = "${e.message ?: e.javaClass.simpleName}"
+            runCatching { toast("保存失败：${e.message ?: e.javaClass.simpleName}") }
+        }
+    }
+
+    /** 最近一次写入错误信息（无错误返回 null），设置页展示用 */
+    fun lastWriteError(): String? = lastWriteError
 
     /* ================= 序列化 ================= */
 
@@ -329,7 +636,7 @@ class Store(context: Context) {
                 put("amt", it.amount); put("name", it.name); put("note", it.note)
             })
         }
-        io.write(txKey(ledgerId), arr.toString())
+        safeWrite(txKey(ledgerId), arr.toString())
     }
 
     private fun parseTxs(s: String): List<Tx> {
@@ -359,7 +666,7 @@ class Store(context: Context) {
                 put("name", it.name); put("note", it.note); put("value", it.value)
             })
         }
-        io.write(dpKey(ledgerId), arr.toString())
+        safeWrite(dpKey(ledgerId), arr.toString())
     }
 
     private fun parseDeps(s: String): List<Deposit> {
@@ -382,119 +689,7 @@ class Store(context: Context) {
 
     private fun newId(): String = "${System.currentTimeMillis()}_${(1000..9999).random()}"
 
-    /* ================= 内置演示账本 ================= */
-
-    fun seedDemoIfEmpty() {
-        if (cfg.getBoolean(KEY_SEEDED, false)) return
-        if (ledgers().isNotEmpty()) { cfg.edit().putBoolean(KEY_SEEDED, true).apply(); return }
-        cfg.edit().putBoolean(KEY_SEEDED, true).apply()
-        seedDemo(now = LocalDate.now())
-    }
-
-    private fun seedDemo(now: LocalDate) {
-        val ledger = addLedger("日常账本", 0)
-        val lid = ledger.id
-
-        // 确定性伪随机（固定种子，保证每次演示内容一致）
-        var seed = 20260827L
-        fun rand(m: Int): Int {
-            seed = (seed * 48271) % 2147483647
-            return (((seed % m) + m) % m).toInt()
-        }
-
-        val expensePool = mapOf(
-            "餐饮" to listOf("兰州拉面", "食堂午饭", "奶茶", "火锅", "早餐包子", "外卖"),
-            "交通" to listOf("地铁", "公交", "打车", "加油"),
-            "购物" to listOf("超市采购", "新衣服", "日用品", "文具"),
-            "娱乐" to listOf("电影票", "游戏充值", "KTV"),
-            "居住" to listOf("房租", "水电费"),
-            "医疗" to listOf("感冒药", "挂号费"),
-            "其他" to listOf("快递", "维修"),
-        )
-        val expCost = mapOf(
-            "餐饮" to listOf(2200L, 1500L, 1600L, 8600L, 800L, 2400L),
-            "交通" to listOf(400L, 200L, 2500L, 30000L),
-            "购物" to listOf(9800L, 15800L, 4500L, 3000L),
-            "娱乐" to listOf(4000L, 3000L, 6000L),
-            "居住" to listOf(350000L, 14500L),
-            "医疗" to listOf(2800L, 5000L),
-            "其他" to listOf(1200L, 6800L),
-        )
-
-        fun monthOf(monthOffset: Int): java.time.YearMonth {
-            return java.time.YearMonth.from(now).plusMonths(monthOffset.toLong())
-        }
-
-        fun addExpense(mo: java.time.YearMonth, day: Int, cat: String, time: String, name: String, amt: Cents) {
-            addTx(Tx(newId(), lid, mo.atDay(day), time, TxDir.OUT, cat, amt, name, ""))
-        }
-
-        fun addIncome(mo: java.time.YearMonth, day: Int, cat: String, time: String, name: String, amt: Cents) {
-            addTx(Tx(newId(), lid, mo.atDay(day), time, TxDir.IN, cat, amt, name, ""))
-        }
-
-        // —— 当前月：完整流水 ——
-        val cur = monthOf(0)
-        val curDays = if (now.dayOfMonth >= 3) now.dayOfMonth else 30
-        repeat(8) { i ->
-            val day = 1 + ((i * 3) % curDays)
-            val cat = expensePool.keys.elementAt(i % 7)
-            addExpense(cur, day, cat, "%02d:%02d".format(8 + i % 10, rand(60)),
-                expensePool[cat]!![rand(expensePool[cat]!!.size)], expCost[cat]!![rand(expCost[cat]!!.size)])
-        }
-        // 固定几笔：房租月初、工资
-        addExpense(cur, 1, "居住", "09:05", "房租", 350000)
-        addExpense(cur, minOf(now.dayOfMonth, 28), "交通", "08:40", "地铁", 400)
-        // 今天：一笔工资收入 + 多笔支出（类别丰富，验证占比/列表高数据量显示）
-        addIncome(cur, now.dayOfMonth, "工资", "09:00", "9月工资", 800000)
-        addIncome(cur, now.dayOfMonth, "理财", "11:20", "基金分红", 50000)
-        addExpense(cur, now.dayOfMonth, "餐饮", "08:15", "早餐包子", 600)
-        addExpense(cur, now.dayOfMonth, "交通", "08:40", "地铁", 400)
-        addExpense(cur, now.dayOfMonth, "餐饮", "12:10", "兰州拉面", 2200)
-        addExpense(cur, now.dayOfMonth, "交通", "13:05", "公交", 200)
-        addExpense(cur, now.dayOfMonth, "购物", "15:30", "超市采购", 9800)
-        addExpense(cur, now.dayOfMonth, "娱乐", "18:00", "电影票", 4000)
-        addExpense(cur, now.dayOfMonth, "餐饮", "18:40", "奶茶", 1600)
-        addExpense(cur, now.dayOfMonth, "居住", "19:10", "水电费", 14500)
-        addExpense(cur, now.dayOfMonth, "医疗", "19:45", "感冒药", 2800)
-        addExpense(cur, now.dayOfMonth, "其他", "20:20", "快递", 1200)
-        addExpense(cur, now.dayOfMonth, "购物", "21:00", "文具", 3000)
-        // 随机补充本月其他日期支出（让"支出最多日"有区分度）
-        addExpense(cur, 18, "餐饮", "12:30", "火锅", 8600)
-        addExpense(cur, 18, "娱乐", "20:00", "电影票", 4000)
-        addExpense(cur, 5, "购物", "15:10", "新衣服", 15800)
-        addExpense(cur, 12, "医疗", "10:00", "感冒药", 2800)
-        addExpense(cur, 25, "其他", "11:45", "快递", 1200)
-        addIncome(cur, 15, "工资", "09:00", "月中津贴", 200000)
-
-        // —— 上一月 ——
-        val prev = monthOf(-1)
-        addExpense(prev, 1, "居住", "09:05", "房租", 350000)
-        addExpense(prev, 3, "餐饮", "12:20", "食堂午饭", 1500)
-        addExpense(prev, 7, "交通", "08:30", "地铁", 400)
-        addExpense(prev, 10, "购物", "16:00", "日用品", 4500)
-        addExpense(prev, 14, "娱乐", "19:30", "游戏充值", 3000)
-        addExpense(prev, 20, "餐饮", "18:40", "奶茶", 1600)
-        addExpense(prev, 24, "医疗", "09:15", "挂号费", 5000)
-        addExpense(prev, 27, "其他", "14:00", "维修", 6800)
-        addIncome(prev, 15, "工资", "09:00", "7月工资", 800000)
-
-        // —— 下一月：少量（开头几天） ——
-        val next = monthOf(1)
-        if (now.dayOfMonth <= 10) {
-            addExpense(next, 1, "居住", "09:05", "房租", 350000)
-        }
-        addIncome(next, 10, "工资", "09:00", "预支工资", 800000)
-
-        // —— 存款 ——
-        addDep(Deposit(newId(), lid, now.minusDays(5), DepositKind.MONEY, "现金", "", 950000))
-        addDep(Deposit(newId(), lid, now.minusMonths(1).minusDays(3), DepositKind.MONEY, "黄金", "100g", 200000))
-        addDep(Deposit(newId(), lid, now.minusDays(20), DepositKind.GOODS, "纪念币", "收藏", 50000))
-        addDep(Deposit(newId(), lid, now.minusMonths(2), DepositKind.GOODS, "图书", "精装版", 20000))
-
-        // 天气：今天设为晴
-        setWeather(lid, now, Weather.SUNNY)
-    }
+    /* ================= 内置演示账本（已移除：不默认建账本，空就是空） ================= */
 }
 
 /* ================= Key-Value 存储后端 ================= */
@@ -521,17 +716,125 @@ private class PrefsLedgerIO(context: Context) : LedgerIO {
 private class SafLedgerIO(context: Context, private val root: DocumentFile) : LedgerIO {
     private val cr = context.contentResolver
 
-    private fun file(key: String): DocumentFile? = root.findFile(fileName(key))
+    /** 目录树 URI（供记录"上次存储"用） */
+    val uri: Uri get() = root.uri
+
+    /**
+     * 直接构造子文档 URI，绕过 DocumentFile 的枚举/查找缓存。
+     * 新授权目录或部分设备上 findFile/listFiles 可能短暂返回空，
+     * 导致"目录已有数据却判定为空"的误判；直连 URI 不依赖枚举，最可靠。
+     */
+    private fun directUri(key: String): Uri? = directUriOf(fileName(key))
+
+    private fun directUriOf(fileName: String): Uri? = runCatching {
+        val treeDocId = android.provider.DocumentsContract.getTreeDocumentId(root.uri)
+        // 只编码文件名片段；整段 Uri.encode 会把 "/" 变成 %2F，再经
+        // buildDocumentUriUsingTree 二次编码成 %252F，文档 id 对不上 → 永远读不到
+        val child = treeDocId + "/" + Uri.encode(fileName)
+        android.provider.DocumentsContract.buildDocumentUriUsingTree(root.uri, child)
+    }.getOrNull()
+
+    /** 枚举非 pixelbook_ 前缀的 json（即 {账本名}_{时间戳}.json 备份文件），返回 (文件名, 内容) */
+    fun listBackups(): List<Pair<String, String>> = runCatching {
+        root.listFiles().mapNotNull { f ->
+            val n = f.name ?: return@mapNotNull null
+            if (n.startsWith(FILE_PREFIX) || !n.endsWith(".json")) return@mapNotNull null
+            val text = readUri(f.uri) ?: return@mapNotNull null
+            n to text
+        }
+    }.onFailure { e ->
+        android.util.Log.w("PdfExp", "listBackups failed -> ${e.message}")
+    }.getOrDefault(emptyList())
+
+    /** 备份文件写入：同名覆盖（不产生 (1) 副本）；找不到文件时才新建 */
+    fun writeBackup(fileName: String, content: String) {
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        // 1) 权威枚举命中 → 用其 URI 覆盖（中文文件名直连 URI 在部分 provider 上不匹配，枚举最可靠）
+        val existing = runCatching { root.findFile(fileName) }.getOrNull()
+        if (existing != null && existing.exists()) {
+            val ok = runCatching {
+                cr.openOutputStream(existing.uri, "wt")?.use { it.write(bytes) }
+                true
+            }.onFailure { e ->
+                android.util.Log.w("PdfExp", "backup findFile-overwrite fail: $fileName -> ${e.message}")
+            }.getOrDefault(false)
+            if (ok) return
+        }
+        // 2) 直连覆盖（枚举失效时的备用；文件不存在时抛 FileNotFoundException → null）
+        val d = directUriOf(fileName)
+        if (d != null) {
+            val ok = runCatching {
+                cr.openOutputStream(d, "wt")?.use { it.write(bytes) }
+                true
+            }.onFailure { e ->
+                android.util.Log.w("PdfExp", "backup direct fail: $fileName -> ${e.message}")
+            }.getOrDefault(false)
+            if (ok) return
+        }
+        // 3) 新建（同名已存在且枚举失效时 provider 可能自动改名 (1)，数据不丢即可）
+        val f = root.createFile("application/json", fileName)
+            ?: throw IOException("无法在存储目录创建备份文件：$fileName")
+        val os = cr.openOutputStream(f.uri, "wt")
+            ?: throw IOException("无法写入备份文件：$fileName")
+        os.use { it.write(bytes) }
+    }
+
+    private fun readUri(uri: Uri): String? = runCatching {
+        cr.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+    }.getOrNull()
+
+    private fun file(key: String): DocumentFile? = runCatching {
+        val byName = root.findFile(fileName(key))
+        if (byName != null && byName.exists()) return byName
+        // 变体容错：精确名失败时按前缀匹配（如 pixelbook_ledgers (1).json / 微信重复保存的副本）
+        val prefix = "$FILE_PREFIX$key."
+        root.listFiles().firstOrNull {
+            val n = it.name
+            n != null && n.startsWith(prefix) && n.endsWith(".json") && it.exists()
+        } ?: root.listFiles().firstOrNull {
+            val n = it.name
+            n != null && n.startsWith(FILE_PREFIX + key) && n.endsWith(".json") && it.exists()
+        }
+    }.onFailure { e ->
+        android.util.Log.w("PdfExp", "file() failed: $key -> ${e.message}")
+    }.getOrNull()
 
     override fun read(key: String): String? {
-        val f = file(key) ?: return null
-        return cr.openInputStream(f.uri)?.bufferedReader()?.use { it.readText() }
+        val f = file(key)
+        if (f != null && f.exists()) {
+            val v = readUri(f.uri)
+            if (v != null) return v
+            android.util.Log.w("PdfExp", "read stream null: $key")
+        }
+        // 枚举失败/文件新建后未生效时直连读（文件不存在返回 null 属正常，不打日志）
+        val d = directUri(key)
+            ?: run { android.util.Log.w("PdfExp", "read directUri build failed: $key"); return null }
+        return readUri(d)
     }
 
     override fun write(key: String, value: String) {
-        var f = file(key)
+        // 优先直连写入：文件已存在 → 覆盖原文件（绝不产生 (1) 副本）；
+        // 不存在 → 落到 DocumentFile 创建
+        val d = directUri(key)
+        if (d != null) {
+            val ok = runCatching {
+                cr.openOutputStream(d, "wt")?.use { it.write(value.toByteArray(Charsets.UTF_8)) }
+                true
+            }.onFailure { e ->
+                android.util.Log.w("PdfExp", "direct write fail: $key -> ${e.message}")
+            }.getOrDefault(false)
+            if (ok) return
+        }
+        // file() 返回 null 是正常情况（文件还不存在，走创建），只有抛异常才说明权限/IO 故障
+        var f = try {
+            file(key)
+        } catch (e: Exception) {
+            throw IOException("无法访问存储目录（权限可能已失效）：$key", e)
+        }
         if (f == null || !f.exists()) {
-            f = root.createFile("application/json", fileName(key))
+            f = runCatching { root.createFile("application/json", fileName(key)) }
+                .onFailure { e -> android.util.Log.w("PdfExp", "createFile fail: $key -> ${e.message}") }
+                .getOrNull()
                 ?: throw IOException("无法在存储目录创建文件：$key")
         }
         val os = cr.openOutputStream(f.uri, "wt")
@@ -543,11 +846,15 @@ private class SafLedgerIO(context: Context, private val root: DocumentFile) : Le
         file(key)?.delete()
     }
 
-    override fun keys(): Set<String> = root.listFiles().mapNotNull { f ->
-        val n = f.name ?: return@mapNotNull null
-        if (n.startsWith(FILE_PREFIX) && n.endsWith(".json"))
-            n.removePrefix(FILE_PREFIX).removeSuffix(".json") else null
-    }.toSet()
+    override fun keys(): Set<String> = runCatching {
+        root.listFiles().mapNotNull { f ->
+            val n = f.name ?: return@mapNotNull null
+            if (n.startsWith(FILE_PREFIX) && n.endsWith(".json"))
+                n.removePrefix(FILE_PREFIX).removeSuffix(".json") else null
+        }.toSet()
+    }.onFailure { e ->
+        android.util.Log.w("PdfExp", "keys() failed -> ${e.message}")
+    }.getOrDefault(emptySet())
 
     private fun fileName(key: String) = "$FILE_PREFIX$key.json"
 }

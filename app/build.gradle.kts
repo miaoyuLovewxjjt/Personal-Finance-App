@@ -6,6 +6,9 @@ plugins {
 
 android {
     namespace = "com.miaoyu03.pixelbook"
+    buildFeatures {
+        buildConfig = true
+    }
     compileSdk = 35
 
     defaultConfig {

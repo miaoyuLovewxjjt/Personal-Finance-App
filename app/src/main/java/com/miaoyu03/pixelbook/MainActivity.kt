@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PixelBookApp() {
     val context = LocalContext.current
-    val store = remember { Store(context.applicationContext).also { it.seedDemoIfEmpty() } }
+    val store = remember { Store(context.applicationContext) }
     // FIXME: seed 后首帧数据同步渲染（无闪烁）
     val stack = remember { mutableStateListOf<Screen>(Screen.Home) }
 

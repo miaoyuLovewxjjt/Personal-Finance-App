@@ -28,6 +28,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -273,6 +275,13 @@ private fun NewLedgerDialog(
             }
         }
     }
+}
+
+/** 字节数格式化：B / KB / MB */
+private fun fmtBytes(b: Long): String = when {
+    b < 1024 -> "$b B"
+    b < 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f KB", b / 1024.0)
+    else -> String.format(java.util.Locale.US, "%.2f MB", b / 1024.0 / 1024.0)
 }
 
 /* ================================================================
@@ -581,6 +590,8 @@ fun EditLedgerDialog(
     var name by remember(ledger.id) { mutableStateOf(ledger.name) }
     var font by remember(ledger.id) { mutableStateOf(ledger.font) }
     var cover by remember(ledger.id) { mutableIntStateOf(ledger.coverColor) }
+    // 只读存储信息（位置 + 占用内存）
+    val storageInfo = remember(ledger.id) { store.ledgerStorageInfo(ledger.id) }
 
     PixelDialog(
         title = "编辑账本",
@@ -653,6 +664,11 @@ fun EditLedgerDialog(
                     }
                 }
             }
+            Spacer(Modifier.height(14.dp))
+            // 只读存储信息（不允许编辑；展示绝对路径便于查找）
+            PxText("当前账本存储位置：${storageInfo.first}", size = 11.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PxText("占用内存：${fmtBytes(storageInfo.second)}", size = 11.sp, color = Px.GrayText)
         }
     }
 }
@@ -714,6 +730,7 @@ fun SettingsDialog(
     var pendingSwitch by remember { mutableStateOf<Uri?>(null) }   // 待确认的目标目录
     var pendingRestore by remember { mutableStateOf(false) }       // 待确认的恢复内部存储
     var showCats by remember { mutableStateOf(false) }             // 类别维护
+    var selfTest by remember { mutableStateOf<String?>(null) }     // 存储自检结果
 
     val treeLauncher = rememberLauncherForActivityResult(OpenTreeContract()) { uri ->
         if (uri != null) pendingSwitch = uri
@@ -734,6 +751,16 @@ fun SettingsDialog(
                 Spacer(Modifier.width(6.dp))
                 PxText("当前目录：${store.storageDirDescription()}", size = 12.sp, color = Px.Wood)
             }
+            // 上次切换结果（失败原因直接展示，方便排查）
+            store.lastSwitchResult()?.let { last ->
+                Spacer(Modifier.height(4.dp))
+                PxText("上次切换：$last", size = 11.sp, color = if (last.startsWith("ok:")) Px.GrassDark else Px.Red)
+            }
+            // 最近一次写入错误（toast 错过也能查）
+            store.lastWriteError()?.let { err ->
+                Spacer(Modifier.height(4.dp))
+                PxText("最近写入出错：$err", size = 11.sp, color = Px.Red)
+            }
             Spacer(Modifier.height(8.dp))
             PxText("切换目录后，现有数据将自动迁移到新目录，账本数据以 JSON 文件保存。", size = 11.sp, color = Px.GrayText)
             Spacer(Modifier.height(14.dp))
@@ -750,6 +777,40 @@ fun SettingsDialog(
                     bg = Px.Wood, height = 40.dp,
                     modifier = Modifier.weight(1f),
                 )
+            }
+            // 存储自检仅 debug 版提供（诊断用），release 不显示
+            if (com.miaoyu03.pixelbook.BuildConfig.DEBUG) {
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PixelButton(
+                        "存储自检",
+                        onClick = { selfTest = store.storageSelfTest() },
+                        bg = Px.Yellow, height = 36.dp,
+                        modifier = Modifier.width(140.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    selfTest?.let { PxText(it, size = 11.sp, color = if (it.startsWith("自检通过")) Px.GrassDark else Px.Red) }
+                }
+            }
+            // 历史存储目录（只读列举；点击路径可复制，删除请自行在文件管理器中处理）
+            val history = store.storageHistory()
+            if (history.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                PxText("历史存储目录（点击路径可复制）", size = 12.sp, color = Px.Wood)
+                val clip = LocalClipboardManager.current
+                history.forEach { (_, name, path) ->
+                    Spacer(Modifier.height(6.dp))
+                    PxText(name, size = 11.sp, color = Px.GrayText)
+                    PxText(
+                        path,
+                        size = 11.sp,
+                        color = Px.Brown,
+                        modifier = Modifier.clickable {
+                            clip.setText(AnnotatedString(path))
+                            store.toast("已复制路径：$path")
+                        },
+                    )
+                }
             }
             Spacer(Modifier.height(16.dp))
             PxText("类别维护", size = 14.sp)
@@ -790,8 +851,9 @@ fun SettingsDialog(
             message = "确定把数据存储切换到所选目录吗？现有数据将自动迁移，迁移完成后自动生效。",
             confirmText = "切换",
             onConfirm = {
-                if (store.switchStorage(uri)) store.toast("已切换，数据迁移完成")
-                else store.toast("切换失败，请检查目录是否可写")
+                val r = store.switchStorage(uri)
+                // 成功时附带绝对路径，便于确认真实生效目录
+                store.toast(if (r.startsWith("ok:")) "$r\n路径：${store.storagePath()}" else r)
                 onStorageChanged()
             },
             onDismiss = { pendingSwitch = null },
@@ -803,8 +865,8 @@ fun SettingsDialog(
             message = "确定把数据存储恢复到应用内部吗？现有数据将自动迁移。",
             confirmText = "恢复",
             onConfirm = {
-                if (store.switchStorage(null)) store.toast("已恢复内部存储，数据迁移完成")
-                else store.toast("恢复失败，请重试")
+                val r = store.switchStorage(null)
+                store.toast(if (r.startsWith("ok:")) "$r\n路径：${store.storagePath()}" else r)
                 onStorageChanged()
             },
             onDismiss = { pendingRestore = false },
