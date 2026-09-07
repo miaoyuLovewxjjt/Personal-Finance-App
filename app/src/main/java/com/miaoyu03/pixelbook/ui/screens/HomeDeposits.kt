@@ -1,4 +1,4 @@
-package com.miaoyu03.pixelbook.ui.screens
+﻿package com.miaoyu03.pixelbook.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -48,6 +48,8 @@ import com.miaoyu03.pixelbook.data.AppMeta
 import com.miaoyu03.pixelbook.data.Deposit
 import com.miaoyu03.pixelbook.data.DepositKind
 import com.miaoyu03.pixelbook.data.Fmt
+import com.miaoyu03.pixelbook.data.MAX_CAT_LEN
+import com.miaoyu03.pixelbook.data.MAX_NOTE_LEN
 import com.miaoyu03.pixelbook.data.Store
 import com.miaoyu03.pixelbook.ui.Px
 import com.miaoyu03.pixelbook.ui.PixelButton
@@ -61,6 +63,7 @@ import com.miaoyu03.pixelbook.ui.PixelIconButton
 import com.miaoyu03.pixelbook.ui.PixelIcons
 import com.miaoyu03.pixelbook.ui.PixelOption
 import com.miaoyu03.pixelbook.ui.PixelPanel
+import com.miaoyu03.pixelbook.ui.PixelSegSwitch
 import com.miaoyu03.pixelbook.ui.PixelTag
 import com.miaoyu03.pixelbook.ui.PixelTextField
 import com.miaoyu03.pixelbook.ui.PxText
@@ -75,51 +78,129 @@ import java.time.LocalDate
 fun HomeScreen(
     store: Store,
     onOpenLedger: (String) -> Unit,
+    onOpenAccountDeposits: (String) -> Unit,
+    onOpenAssets: (String) -> Unit,
 ) {
     var tick by remember { mutableIntStateOf(0) }
-    var showNew by remember { mutableStateOf(false) }
+    var showNewLedger by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Ledger?>(null) }
     var editing by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Ledger?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var accountPicker by remember { mutableStateOf(false) }
+    var editingAccount by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Account?>(null) }
+    var addingAccount by remember { mutableStateOf(false) }
+    var deletingAccount by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Account?>(null) }
 
-    val ledgers = remember(tick) { store.ledgers() }
+    val accounts = remember(tick) { store.accounts() }
+    val curId = remember(tick) { store.currentAccountId() }
+    val account = accounts.firstOrNull { it.id == curId }
+    val ledgers = remember(tick, account?.id) {
+        account?.let { store.ledgersOf(it.id) } ?: emptyList()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            item { Spacer(Modifier.height(18.dp)) }
+            item { Spacer(Modifier.height(14.dp)) }
             item {
-                PxText("我的账本", size = 24.sp, align = TextAlign.Center)
-                Spacer(Modifier.height(6.dp))
-                PxText("共 ${ledgers.size} 个账本", size = 12.sp, color = Px.GrayText, align = TextAlign.Center)
+                PxText("我的记账", size = 24.sp, align = TextAlign.Center)
             }
-            item { Spacer(Modifier.height(18.dp)) }
-            items(ledgers, key = { it.id }) { ledger ->
-                LedgerCard(
-                    ledger = ledger,
-                    totalDeposits = store.totalDeposits(ledger.id),
-                    onClick = { onOpenLedger(ledger.id) },
-                    onEdit = { editing = ledger },
-                    onDelete = { deleting = ledger },
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-            if (ledgers.isEmpty()) {
+            item { Spacer(Modifier.height(12.dp)) }
+            if (account != null) {
+                // 账户木质卡：标题下方靠左通栏；点按切换账户，右侧可编辑/删除/新建
                 item {
-                    Spacer(Modifier.height(40.dp))
-                    PxText("还没有账本，点击下方按钮新建", size = 13.sp, color = Px.GrayText)
+                    AccountWoodCard(
+                        account = account,
+                        ledgerCount = ledgers.size,
+                        onClick = { accountPicker = true },
+                        onEdit = { editingAccount = account },
+                        onDelete = { deletingAccount = account },
+                        onAdd = { addingAccount = true },
+                    )
                 }
-            }
-            item { Spacer(Modifier.height(16.dp)) }
-            item {
-                PixelButton(
-                    text = "＋ 新建账本",
-                    onClick = { showNew = true },
-                    bg = Px.Yellow,
-                    modifier = Modifier.width(220.dp),
-                )
+                item { Spacer(Modifier.height(14.dp)) }
+                // 功能区（标题格式通栏）
+                item {
+                    SectionLink(
+                        icon = "chest",
+                        title = "我的存款",
+                        sub = "本账户公用的一本存款，不分账本",
+                        onClick = { onOpenAccountDeposits(account.id) },
+                    )
+                }
+                item { Spacer(Modifier.height(10.dp)) }
+                item {
+                    SectionLink(
+                        icon = "bankCard",
+                        title = "我的钱包",
+                        sub = "银行卡 / 支付宝 / 微信等资产账户",
+                        onClick = { onOpenAssets(account.id) },
+                    )
+                }
+                item { Spacer(Modifier.height(18.dp)) }
+                // 记账簿区标题（无图标）
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 22.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PxText("记账簿", size = 16.sp, color = Px.Brown)
+                        Spacer(Modifier.weight(1f))
+                        PxText("${ledgers.size} / ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT}", size = 11.sp, color = Px.GrayText)
+                    }
+                }
+                item { Spacer(Modifier.height(6.dp)) }
+                items(ledgers, key = { it.id }) { ledger ->
+                    LedgerCard(
+                        ledger = ledger,
+                        onClick = { onOpenLedger(ledger.id) },
+                        onEdit = { editing = ledger },
+                        onDelete = { deleting = ledger },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                if (ledgers.isEmpty()) {
+                    item {
+                        Spacer(Modifier.height(30.dp))
+                        PxText("该账户还没有账本，点击下方按钮新建", size = 13.sp, color = Px.GrayText)
+                    }
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+                item {
+                    PixelButton(
+                        text = if (ledgers.size >= com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT) "已达 60 本账本上限" else "＋ 新建账本",
+                        onClick = { showNewLedger = true },
+                        bg = Px.Yellow,
+                        enabled = ledgers.size < com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT,
+                        modifier = Modifier.width(220.dp),
+                    )
+                }
+            } else {
+                item {
+                    Spacer(Modifier.height(60.dp))
+                    PixelPanel(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        bg = Px.Cream,
+                        contentPadding = 18.dp,
+                    ) {
+                        PxText("还没有账户。新建一个账户，账户下可建立多个账本。", size = 13.sp, color = Px.GrayText)
+                    }
+                }
+                item { Spacer(Modifier.height(20.dp)) }
+                item {
+                    PixelButton(
+                        text = "＋ 新建账户",
+                        onClick = { addingAccount = true },
+                        bg = Px.Yellow,
+                        modifier = Modifier.width(220.dp),
+                    )
+                }
             }
             item { Spacer(Modifier.height(28.dp)) }
         }
@@ -136,11 +217,13 @@ fun HomeScreen(
         )
     }
 
-    if (showNew) {
+    // 新建账本（当前账户下）
+    if (showNewLedger && account != null) {
         NewLedgerDialog(
-            onDismiss = { showNew = false },
+            accountId = account.id,
+            onDismiss = { showNewLedger = false },
             onCreated = { id ->
-                showNew = false
+                showNewLedger = false
                 tick++
                 onOpenLedger(id)   // 新建后进入该账本
             },
@@ -164,19 +247,190 @@ fun HomeScreen(
             onSaved = { editing = null; tick++ },
         )
     }
+    // 账户操作
+    if (accountPicker) {
+        PixelDialog(title = "切换账户", onDismiss = { accountPicker = false }) {
+            accounts.forEach { a ->
+                val isCur = a.id == account?.id
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isCur) Px.Grass.copy(alpha = 0.35f) else Color.Transparent)
+                        .clickable {
+                            store.setCurrentAccountId(a.id)
+                            accountPicker = false
+                            tick++
+                        }
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PixelIcon("idcard", size = 20.dp)
+                    Spacer(Modifier.width(8.dp))
+                    PxText(a.name, size = 14.sp, color = if (isCur) Px.GrassDark else Px.Brown, modifier = Modifier.weight(1f))
+                    if (isCur) PixelTag("当前", bg = Px.Grass, textColor = Px.Cream)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            PixelButton(
+                text = "＋ 新建账户",
+                onClick = { accountPicker = false; addingAccount = true },
+                bg = Px.Yellow, height = 40.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+    if (addingAccount) {
+        AccountNameDialog(
+            title = "新建账户",
+            initial = "",
+            hint = "账户名（不可与已有账户同名）",
+            onSave = { nm -> store.addAccount(nm) != null },
+            onDismiss = { addingAccount = false },
+            onSaved = { addingAccount = false; tick++ },
+            dupHint = { store.toast("账户名无效或已存在") },
+        )
+    }
+    editingAccount?.let { a ->
+        AccountNameDialog(
+            title = "编辑账户",
+            initial = a.name,
+            hint = "修改账户名将自动同步重命名数据文件夹",
+            onSave = { nm -> store.renameAccount(a.id, nm) },
+            onDismiss = { editingAccount = null },
+            onSaved = { editingAccount = null; tick++ },
+            dupHint = { store.toast("账户名无效或已存在") },
+        )
+    }
+    deletingAccount?.let { a ->
+        PixelConfirm(
+            title = "删除账户",
+            message = "将删除账户「${a.name}」及其数据文件夹，内含全部账本、流水与资产信息，无法恢复。确定删除吗？",
+            confirmText = "删除",
+            onConfirm = {
+                store.deleteAccount(a.id)
+                deletingAccount = null
+                tick++
+            },
+            onDismiss = { deletingAccount = null },
+        )
+    }
     if (showSettings) {
         SettingsDialog(
             store = store,
+            accountId = account?.id ?: "",
             onDismiss = { showSettings = false },
             onStorageChanged = { showSettings = false; tick++ },
         )
     }
 }
 
+/** 账户木质卡（标题下方靠左通栏）：木底奶油字，右侧操作按钮 */
+@Composable
+private fun AccountWoodCard(
+    account: com.miaoyu03.pixelbook.data.Account,
+    ledgerCount: Int,
+    onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onAdd: () -> Unit,
+) {
+    PixelPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clickable(onClick = onClick),
+        bg = Px.Wood,
+        contentPadding = 8.dp,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PixelIcon("idcard", size = 28.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                PxText(account.name, size = 17.sp, color = Px.Cream, maxLines = 1)
+                Spacer(Modifier.height(2.dp))
+                PxText(
+                    "账本 $ledgerCount / ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT} · 点按切换账户",
+                    size = 11.sp,
+                    color = Px.Cream.copy(alpha = 0.72f),
+                )
+            }
+            PixelIconButton(icon = "pencil", size = 30.dp, bg = Px.Cream, onClick = onEdit, desc = "编辑账户")
+            Spacer(Modifier.width(4.dp))
+            PixelIconButton(icon = "trash", size = 30.dp, bg = Px.Cream, onClick = onDelete, desc = "删除账户")
+            Spacer(Modifier.width(4.dp))
+            PixelIconButton(icon = "plus", size = 30.dp, bg = Px.Yellow, onClick = onAdd, desc = "新建账户")
+        }
+    }
+}
+
+/** 首页通栏功能区（标题格式，点按进入；无尾随箭头，保持整洁） */
+@Composable
+private fun SectionLink(icon: String, title: String, sub: String, onClick: () -> Unit) {
+    PixelPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .clickable(onClick = onClick),
+        bg = Px.Cream,
+        contentPadding = 12.dp,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PixelIcon(icon, size = 30.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                PxText(title, size = 16.sp, color = Px.Brown)
+                if (sub.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    PxText(sub, size = 11.sp, color = Px.GrayText)
+                }
+            }
+        }
+    }
+}
+
+/** 账户新建 / 编辑输入弹窗（同名不允许，长度 ≤30） */
+@Composable
+private fun AccountNameDialog(
+    title: String,
+    initial: String,
+    hint: String,
+    onSave: (String) -> Boolean,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+    dupHint: () -> Unit,
+) {
+    var name by remember { mutableStateOf(initial) }
+    PixelDialog(
+        title = title,
+        onDismiss = onDismiss,
+        footer = {
+            PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
+            PixelButton(
+                "保存",
+                {
+                    val ok = onSave(name.trim())
+                    if (!ok) dupHint() else onSaved()
+                },
+                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
+            )
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PixelTextField(
+                value = name,
+                onValueChange = { name = Fmt.clip(it, com.miaoyu03.pixelbook.data.MAX_ACCOUNT_NAME_LEN) },
+                placeholder = "账户名",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
+            PxText(hint, size = 11.sp, color = Px.GrayText)
+        }
+    }
+}
+
 @Composable
 private fun LedgerCard(
     ledger: com.miaoyu03.pixelbook.data.Ledger,
-    totalDeposits: com.miaoyu03.pixelbook.data.Cents,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
@@ -190,31 +444,23 @@ private fun LedgerCard(
         contentPadding = 10.dp,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // 封面图标：随账本所选封面色（编辑颜色后主页同步变化）
-            Image(
-                bitmap = PixelIcons.ledgerIcon(ledger.coverColor),
-                contentDescription = "账本",
-                filterQuality = FilterQuality.None,
-                modifier = Modifier.size(40.dp),
-            )
+            // 封面图标：手绘账本（马赛克硬边）
+            PixelIcon("ledger", size = 44.dp)
             Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                PxText(ledger.name, size = 15.sp, maxLines = 2)
-                Spacer(Modifier.height(4.dp))
-                PxText("总存款 ${Fmt.yen(totalDeposits)}", size = 12.sp, color = Px.Wood)
-            }
-            // 右侧：删除（缩小）+ 编辑（手绘铅笔，最右）
-            PixelIconButton(icon = "trash", size = 26.dp, bg = Px.CreamDark, onClick = onDelete, desc = "删除账本")
-            Spacer(Modifier.width(4.dp))
+            PxText(ledger.name, size = 16.sp, maxLines = 2, modifier = Modifier.weight(1f))
+            // 右侧：编辑（铅笔）在前、删除（垃圾桶）在后
             PixelIconButton(icon = "pencil", size = 26.dp, bg = Px.CreamDark, onClick = onEdit, desc = "编辑账本")
+            Spacer(Modifier.width(4.dp))
+            PixelIconButton(icon = "trash", size = 26.dp, bg = Px.CreamDark, onClick = onDelete, desc = "删除账本")
         }
     }
 }
 
-/** 新建账本弹窗：名称 + 封面色选择 */
+/** 新建账本弹窗（当前账户下）：名称 + 封面色选择 */
 @Composable
 private fun NewLedgerDialog(
     store: Store,
+    accountId: String,
     onDismiss: () -> Unit,
     onCreated: (String) -> Unit,
 ) {
@@ -235,7 +481,12 @@ private fun NewLedgerDialog(
                         store.toast("账本名称不能超过${Store.MAX_LEDGER_NAME}字")
                         return@PixelButton
                     }
-                    onCreated(store.addLedger(nm, cover).id)
+                    val created = store.addLedger(accountId, nm, cover)
+                    if (created == null) {
+                        store.toast("每个账户最多 ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT} 本账本")
+                        return@PixelButton
+                    }
+                    onCreated(created.id)
                 },
                 bg = Px.Grass, height = 40.dp, modifier = Modifier.width(110.dp),
             )
@@ -244,7 +495,11 @@ private fun NewLedgerDialog(
         Column(modifier = Modifier.fillMaxWidth()) {
             PxText("账本名称", size = 12.sp, color = Px.GrayText)
             Spacer(Modifier.height(4.dp))
-            PixelTextField(value = name, onValueChange = { name = it }, placeholder = "如：日常账本", modifier = Modifier.fillMaxWidth())
+            PixelTextField(
+                value = name,
+                onValueChange = { name = Fmt.clip(it, Store.MAX_LEDGER_NAME) },   // 最长 30 字
+                placeholder = "如：日常账本", modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(12.dp))
             PxText("封面颜色", size = 12.sp, color = Px.GrayText)
             Spacer(Modifier.height(6.dp))
@@ -285,58 +540,78 @@ private fun fmtBytes(b: Long): String = when {
 }
 
 /* ================================================================
- * 二、存款明细页
+ * 账户存款明细（我的记账 → 存款明细）：
+ * 存款为账户级「公用一本」，不分账本；各账本旧存款已自动汇入（备注标来源）。
  * ================================================================ */
 
 @Composable
-fun DepositsScreen(
+fun AccountDepositsScreen(
     store: Store,
-    ledgerId: String,
+    accountId: String,
     onBack: () -> Unit,
 ) {
     var tick by remember { mutableIntStateOf(0) }
+    var hideAmount by remember { mutableStateOf(false) }
     var showForm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Deposit?>(null) }
     var deleting by remember { mutableStateOf<Deposit?>(null) }
-    // 金额隐私开关：默认关闭（显示金额）；打开后本页所有具体金额隐藏为 ¥****
-    var hideAmount by remember { mutableStateOf(false) }
 
-    val deposits = remember(tick) { store.depList(ledgerId) }
-    val total = remember(tick) { store.totalDeposits(ledgerId) }
+    val deposits = remember(tick, accountId) { store.accountDepList(accountId) }
+    val total = remember(tick, accountId) { store.accountTotalDeposits(accountId) }
     val money = deposits.filter { it.kind == DepositKind.MONEY }
     val goods = deposits.filter { it.kind == DepositKind.GOODS }
+    val moneyTotal = money.sumOf { it.value }
+    val goodsTotal = goods.sumOf { it.value }
 
     Column(modifier = Modifier.fillMaxSize()) {
         PixelHeader(
-            title = "存款明细",
+            title = "我的存款",
             onBack = onBack,
-            trailing = {
-                AmountSwitch(hide = hideAmount, onToggle = { hideAmount = !hideAmount })
-            },
         )
 
-        // 总存款卡
+        // 标题下方靠右：显示/隐藏金额开关（与标题及下方卡片留间距）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            AmountSwitch(hide = hideAmount, onToggle = { hideAmount = !hideAmount })
+        }
+
+        // 账户总存款卡
         PixelPanel(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
+                .padding(horizontal = 20.dp),
             bg = Px.Cream,
             contentPadding = 12.dp,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                PixelIcon("coinPile", size = 30.dp)
-                Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    PixelIcon("coinPile", size = 30.dp)
+                    Spacer(Modifier.width(8.dp))
+                    PxText(
+                        if (hideAmount) "总存款 ¥****" else "总存款 ${Fmt.yen(total)}",
+                        size = 16.sp,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
                 PxText(
-                    if (hideAmount) "总存款 ¥****" else "总存款 ${Fmt.yen(total)}",
-                    size = 16.sp,
+                    if (hideAmount) "金钱 ¥**** · 非金钱 ¥**** · 共 ${deposits.size} 笔" else "金钱 ${Fmt.yen(moneyTotal)} · 非金钱 ${Fmt.yen(goodsTotal)} · 共 ${deposits.size} 笔",
+                    size = 11.sp,
+                    color = Px.GrayText,
+                    align = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
 
+        // 公用存款：金钱类 / 非金钱类 两组（不分账本）
         LazyColumn(modifier = Modifier.weight(1f)) {
             DepositGroup(
                 title = "金钱类",
@@ -354,6 +629,12 @@ fun DepositsScreen(
                 onEdit = { editing = it },
                 onDelete = { deleting = it },
             )
+            if (deposits.isEmpty()) {
+                item {
+                    Spacer(Modifier.height(60.dp))
+                    PxText("还没有存款，点击下方按钮新增", size = 13.sp, color = Px.GrayText, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                }
+            }
             item { Spacer(Modifier.height(10.dp)) }
         }
 
@@ -373,9 +654,9 @@ fun DepositsScreen(
     }
 
     if (showForm || editing != null) {
-        DepositFormDialog(
+        AccountDepositFormDialog(
             store = store,
-            ledgerId = ledgerId,
+            accountId = accountId,
             initial = editing,
             onDismiss = { showForm = false; editing = null },
             onSaved = { showForm = false; editing = null; tick++ },
@@ -386,8 +667,129 @@ fun DepositsScreen(
             title = "删除存款",
             message = "确定删除「${d.name}」这笔存款吗？",
             confirmText = "删除",
-            onConfirm = { store.deleteDep(d.id, ledgerId); tick++ },
+            onConfirm = { store.deleteAccountDep(accountId, d.id); tick++ },
             onDismiss = { deleting = null },
+        )
+    }
+}
+
+/** 账户公用存款 新增/编辑 表单（新增不归属任何账本） */
+@Composable
+private fun AccountDepositFormDialog(
+    store: Store,
+    accountId: String,
+    initial: Deposit?,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    var date by remember { mutableStateOf(initial?.date ?: LocalDate.now()) }
+    var kind by remember { mutableStateOf(initial?.kind ?: DepositKind.MONEY) }
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var note by remember { mutableStateOf(initial?.note ?: "") }
+    var valueStr by remember { mutableStateOf(if (initial != null) Fmt.money(initial.value) else "") }
+    var showCal by remember { mutableStateOf(false) }
+
+    PixelDialog(
+        title = if (initial == null) "新增存款" else "编辑存款",
+        onDismiss = onDismiss,
+        footer = {
+            PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
+            PixelButton(
+                "保存",
+                {
+                    val v = Fmt.parseCents(valueStr)
+                    if (v == null) { store.toast("请填写有效金额"); return@PixelButton }
+                    if (name.trim().isEmpty()) { store.toast("请填写物品名称"); return@PixelButton }
+                    val base = initial
+                    val d = Deposit(
+                        id = base?.id ?: "d${System.currentTimeMillis()}",
+                        ledgerId = "",
+                        date = date,
+                        kind = kind,
+                        name = name.trim(),
+                        note = note.trim(),
+                        value = v,
+                    )
+                    if (base == null) store.addAccountDep(accountId, d) else store.updateAccountDep(accountId, d)
+                    onSaved()
+                },
+                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
+            )
+        },
+    ) {
+        // 表单体可滚动：软键盘弹出后仍能查看/点选下方字段
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(max = 430.dp),
+        ) {
+            // 入库时间
+            PxText("入库时间", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PixelPanel(
+                    modifier = Modifier
+                        .height(40.dp)
+                        .clickable { showCal = true },
+                    bg = Px.Cream,
+                    depth = 2.dp,
+                    contentPadding = 0.dp,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        PxText(Fmt.dateYmd(date), size = 13.sp)
+                        Spacer(Modifier.weight(1f))
+                        PixelIcon("calendar", size = 18.dp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            // 类型
+            PxText("类型", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PixelDropdown(
+                label = "类型",
+                options = listOf(
+                    PixelOption("金钱类", "coinPile"),
+                    PixelOption("非金钱类", "gift"),
+                ),
+                selected = kind.label,
+                onSelect = { kind = if (it == "金钱类") DepositKind.MONEY else DepositKind.GOODS },
+                modifier = Modifier.fillMaxWidth(),
+                width = 140.dp,
+            )
+            Spacer(Modifier.height(10.dp))
+            PxText("物品名称", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PixelTextField(value = name, onValueChange = { name = it }, placeholder = "如：现金、黄金", modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(10.dp))
+            PxText("备注", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PixelTextField(
+                value = note,
+                onValueChange = { note = Fmt.clip(it, MAX_NOTE_LEN) },
+                placeholder = "可选",
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(10.dp))
+            PxText("价值（元）", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PixelTextField(
+                value = valueStr,
+                onValueChange = { valueStr = Fmt.cleanAmountInput(it) },
+                placeholder = "如：9000", numeric = true, modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+
+    if (showCal) {
+        PixelCalendarDialog(
+            initial = date,
+            onPick = { date = it; showCal = false },
+            onDismiss = { showCal = false },
         )
     }
 }
@@ -465,117 +867,15 @@ private fun DepositRow(
                     bg = if (d.kind == DepositKind.MONEY) Px.Clay else Px.SkyDark,
                 )
                 Spacer(Modifier.weight(1f))
+                // 编辑（铅笔）在删除（垃圾桶）左侧
+                PixelIconButton(icon = "pencil", size = 30.dp, bg = Px.CreamDark, onClick = onEdit, desc = "编辑")
+                Spacer(Modifier.width(4.dp))
                 PixelIconButton(icon = "trash", size = 30.dp, bg = Px.CreamDark, onClick = onDelete, desc = "删除")
             }
         }
     }
 }
 
-/** 存款 新增/编辑 表单 */
-@Composable
-private fun DepositFormDialog(
-    store: Store,
-    ledgerId: String,
-    initial: Deposit?,
-    onDismiss: () -> Unit,
-    onSaved: () -> Unit,
-) {
-    var date by remember { mutableStateOf(initial?.date ?: LocalDate.now()) }
-    var kind by remember { mutableStateOf(initial?.kind ?: DepositKind.MONEY) }
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var note by remember { mutableStateOf(initial?.note ?: "") }
-    var valueStr by remember { mutableStateOf(if (initial != null) Fmt.money(initial.value) else "") }
-    var showCal by remember { mutableStateOf(false) }
-
-    PixelDialog(
-        title = if (initial == null) "新增存款" else "编辑存款",
-        onDismiss = onDismiss,
-        footer = {
-            PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
-            PixelButton(
-                "保存",
-                {
-                    val v = Fmt.parseCents(valueStr)
-                    if (v == null) { store.toast("请填写有效金额"); return@PixelButton }
-                    if (name.trim().isEmpty()) { store.toast("请填写物品名称"); return@PixelButton }
-                    val base = initial
-                    val d = Deposit(
-                        id = base?.id ?: "d${System.currentTimeMillis()}",
-                        ledgerId = ledgerId,
-                        date = date,
-                        kind = kind,
-                        name = name.trim(),
-                        note = note.trim(),
-                        value = v,
-                    )
-                    if (base == null) store.addDep(d) else store.updateDep(d)
-                    onSaved()
-                },
-                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
-            )
-        },
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // 入库时间
-            PxText("入库时间", size = 12.sp, color = Px.GrayText)
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelPanel(
-                    modifier = Modifier
-                        .height(40.dp)
-                        .clickable { showCal = true },
-                    bg = Px.Cream,
-                    depth = 2.dp,
-                    contentPadding = 0.dp,
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PxText(Fmt.dateYmd(date), size = 13.sp)
-                        Spacer(Modifier.weight(1f))
-                        PixelIcon("calendar", size = 18.dp)
-                    }
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            // 类型
-            PxText("类型", size = 12.sp, color = Px.GrayText)
-            Spacer(Modifier.height(4.dp))
-            PixelDropdown(
-                label = "类型",
-                options = listOf(
-                    PixelOption("金钱类", "coinPile"),
-                    PixelOption("非金钱类", "gift"),
-                ),
-                selected = kind.label,
-                onSelect = { kind = if (it == "金钱类") DepositKind.MONEY else DepositKind.GOODS },
-                modifier = Modifier.fillMaxWidth(),
-                width = 140.dp,
-            )
-            Spacer(Modifier.height(10.dp))
-            PxText("物品名称", size = 12.sp, color = Px.GrayText)
-            Spacer(Modifier.height(4.dp))
-            PixelTextField(value = name, onValueChange = { name = it }, placeholder = "如：现金、黄金", modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(10.dp))
-            PxText("备注", size = 12.sp, color = Px.GrayText)
-            Spacer(Modifier.height(4.dp))
-            PixelTextField(value = note, onValueChange = { note = it }, placeholder = "可选", modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(10.dp))
-            PxText("价值（元）", size = 12.sp, color = Px.GrayText)
-            Spacer(Modifier.height(4.dp))
-            PixelTextField(value = valueStr, onValueChange = { valueStr = it }, placeholder = "如：9000", numeric = true, modifier = Modifier.fillMaxWidth())
-        }
-    }
-
-    if (showCal) {
-        PixelCalendarDialog(
-            initial = date,
-            onPick = { date = it; showCal = false },
-            onDismiss = { showCal = false },
-        )
-    }
-}
 /* ================================================================
  * 编辑账本弹窗：名称 / 字体 / 封面颜色（主页卡片右侧铅笔进入）
  * ================================================================ */
@@ -590,8 +890,6 @@ fun EditLedgerDialog(
     var name by remember(ledger.id) { mutableStateOf(ledger.name) }
     var font by remember(ledger.id) { mutableStateOf(ledger.font) }
     var cover by remember(ledger.id) { mutableIntStateOf(ledger.coverColor) }
-    // 只读存储信息（位置 + 占用内存）
-    val storageInfo = remember(ledger.id) { store.ledgerStorageInfo(ledger.id) }
 
     PixelDialog(
         title = "编辑账本",
@@ -665,10 +963,8 @@ fun EditLedgerDialog(
                 }
             }
             Spacer(Modifier.height(14.dp))
-            // 只读存储信息（不允许编辑；展示绝对路径便于查找）
-            PxText("当前账本存储位置：${storageInfo.first}", size = 11.sp, color = Px.GrayText)
-            Spacer(Modifier.height(4.dp))
-            PxText("占用内存：${fmtBytes(storageInfo.second)}", size = 11.sp, color = Px.GrayText)
+            // 存储位置提示（账户文件夹内的账本单文件）
+            PxText("数据按账户文件夹存放于当前存储目录，账本名自动同步文件名", size = 11.sp, color = Px.GrayText)
         }
     }
 }
@@ -724,13 +1020,12 @@ private class OpenTreeContract : androidx.activity.result.contract.ActivityResul
 @Composable
 fun SettingsDialog(
     store: Store,
+    accountId: String,
     onDismiss: () -> Unit,
     onStorageChanged: () -> Unit,
 ) {
     var pendingSwitch by remember { mutableStateOf<Uri?>(null) }   // 待确认的目标目录
     var pendingRestore by remember { mutableStateOf(false) }       // 待确认的恢复内部存储
-    var showCats by remember { mutableStateOf(false) }             // 类别维护
-    var selfTest by remember { mutableStateOf<String?>(null) }     // 存储自检结果
 
     val treeLauncher = rememberLauncherForActivityResult(OpenTreeContract()) { uri ->
         if (uri != null) pendingSwitch = uri
@@ -778,20 +1073,8 @@ fun SettingsDialog(
                     modifier = Modifier.weight(1f),
                 )
             }
-            // 存储自检仅 debug 版提供（诊断用），release 不显示
-            if (com.miaoyu03.pixelbook.BuildConfig.DEBUG) {
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PixelButton(
-                        "存储自检",
-                        onClick = { selfTest = store.storageSelfTest() },
-                        bg = Px.Yellow, height = 36.dp,
-                        modifier = Modifier.width(140.dp),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    selfTest?.let { PxText(it, size = 11.sp, color = if (it.startsWith("自检通过")) Px.GrassDark else Px.Red) }
-                }
-            }
+            // 类别维护（属于当前账户）
+            Spacer(Modifier.height(10.dp))
             // 历史存储目录（只读列举；点击路径可复制，删除请自行在文件管理器中处理）
             val history = store.storageHistory()
             if (history.isNotEmpty()) {
@@ -812,21 +1095,6 @@ fun SettingsDialog(
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            PxText("类别维护", size = 14.sp)
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("pencil", size = 18.dp)
-                Spacer(Modifier.width(6.dp))
-                PxText("收入类别 / 花销类别，可新增、编辑、删除（「其他」固定）", size = 12.sp, color = Px.Wood)
-            }
-            Spacer(Modifier.height(8.dp))
-            PixelButton(
-                "收入 / 花销类别",
-                onClick = { showCats = true },
-                bg = Px.Yellow, height = 40.dp, icon = "pencil",
-                modifier = Modifier.fillMaxWidth(),
-            )
             Spacer(Modifier.height(16.dp))
             PxText("签名", size = 14.sp)
             Spacer(Modifier.height(6.dp))
@@ -872,179 +1140,7 @@ fun SettingsDialog(
             onDismiss = { pendingRestore = false },
         )
     }
-    if (showCats) {
-        CategoryManagerDialog(
-            store = store,
-            onDismiss = { showCats = false },
-        )
-    }
 }
-
-/* ================================================================
- * 类别维护弹窗：收入 / 花销分别维护，可新增、编辑、删除；
- * 「其他」固定不可操作；删除被引用类别 → 记录回退「其他」；
- * 编辑被引用类别 → 记录全量同步改名为新类别
- * ================================================================ */
-
-@Composable
-private fun CategoryManagerDialog(
-    store: Store,
-    onDismiss: () -> Unit,
-) {
-    var tick by remember { mutableIntStateOf(0) }
-    var editing by remember { mutableStateOf<Pair<Boolean, String>?>(null) }  // (isIncome, 原类别名)
-    var adding by remember { mutableStateOf<Boolean?>(null) }                  // isIncome
-    var deleting by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
-
-    val inCats = remember(tick) { store.incomeCats() }
-    val outCats = remember(tick) { store.expenseCats() }
-
-    PixelDialog(
-        title = "类别维护",
-        onDismiss = onDismiss,
-        footer = {
-            PixelButton("完成", onDismiss, bg = Px.Clay, height = 40.dp, modifier = Modifier.width(140.dp))
-        },
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .heightIn(max = 430.dp),
-        ) {
-            CategoryGroup(
-                title = "收入类别",
-                cats = inCats,
-                onEdit = { editing = true to it },
-                onDelete = { deleting = true to it },
-                onAdd = { adding = true },
-            )
-            Spacer(Modifier.height(16.dp))
-            CategoryGroup(
-                title = "花销类别",
-                cats = outCats,
-                onEdit = { editing = false to it },
-                onDelete = { deleting = false to it },
-                onAdd = { adding = false },
-            )
-        }
-    }
-
-    // 编辑类别（输入框）
-    editing?.let { (isIncome, old) ->
-        InputDialog(
-            title = "编辑类别",
-            initial = old,
-            onSave = { new ->
-                val ok = if (isIncome) store.renameIncomeCat(old, new) else store.renameExpenseCat(old, new)
-                if (!ok) store.toast("类别名无效、重复，或「其他」不可编辑")
-                else { editing = null; tick++ }
-            },
-            onDismiss = { editing = null },
-        )
-    }
-    // 新增类别（输入框）
-    adding?.let { isIncome ->
-        InputDialog(
-            title = if (isIncome) "新增收入类别" else "新增花销类别",
-            initial = "",
-            onSave = { name ->
-                val ok = if (isIncome) store.addIncomeCat(name) else store.addExpenseCat(name)
-                if (!ok) store.toast("类别名无效或已存在")
-                else { adding = null; tick++ }
-            },
-            onDismiss = { adding = null },
-        )
-    }
-    // 删除确认
-    deleting?.let { (isIncome, name) ->
-        PixelConfirm(
-            title = "删除类别",
-            message = "删除「$name」后，所有使用该类别的记录将自动改为「${com.miaoyu03.pixelbook.data.CATEGORY_OTHERS}」。确定删除吗？",
-            confirmText = "删除",
-            onConfirm = {
-                val ok = if (isIncome) store.deleteIncomeCat(name) else store.deleteExpenseCat(name)
-                if (!ok) store.toast("删除失败")
-                else { deleting = null; tick++ }
-            },
-            onDismiss = { deleting = null },
-        )
-    }
-}
-
-/** 一组类别：标题 + 类别行（名称 + 编辑/删除；「其他」固定不可操作）+ 新增按钮 */
-@Composable
-private fun CategoryGroup(
-    title: String,
-    cats: List<String>,
-    onEdit: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    onAdd: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        PxText(title, size = 14.sp)
-        Spacer(Modifier.height(4.dp))
-        cats.forEach { c ->
-            val fixed = c == com.miaoyu03.pixelbook.data.CATEGORY_OTHERS
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                PixelIcon(PixelIcons.iconOfCategory(c), size = 18.dp)
-                Spacer(Modifier.width(6.dp))
-                PxText(c, size = 13.sp, color = if (fixed) Px.GrayText else Px.Brown, modifier = Modifier.weight(1f))
-                if (fixed) {
-                    PxText("固定类别", size = 10.sp, color = Px.GrayText)
-                } else {
-                    PixelIconButton(icon = "pencil", size = 24.dp, bg = Px.CreamDark, onClick = { onEdit(c) }, desc = "编辑")
-                    Spacer(Modifier.width(4.dp))
-                    PixelIconButton(icon = "trash", size = 24.dp, bg = Px.CreamDark, onClick = { onDelete(c) }, desc = "删除")
-                }
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        PixelButton(
-            text = "＋ 新增类别",
-            onClick = onAdd,
-            bg = Px.Yellow,
-            height = 36.dp,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-/** 类别新增 / 编辑输入弹窗 */
-@Composable
-private fun InputDialog(
-    title: String,
-    initial: String,
-    onSave: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var name by remember { mutableStateOf(initial) }
-    PixelDialog(
-        title = title,
-        onDismiss = onDismiss,
-        footer = {
-            PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
-            PixelButton(
-                "保存",
-                { onSave(name.trim()) },
-                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
-            )
-        },
-    ) {
-        PixelTextField(
-            value = name,
-            onValueChange = { name = it },
-            placeholder = "类别名称",
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-          
 
 /* ================================================================
  * 金额显示开关（存款明细页右上角）：显示 / 隐藏两段式，像素风
@@ -1052,35 +1148,5 @@ private fun InputDialog(
 
 @Composable
 private fun AmountSwitch(hide: Boolean, onToggle: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .background(Px.Cream)
-            .drawBehind {
-                val stroke = 2.dp.toPx()
-                drawRect(
-                    Px.Brown,
-                    topLeft = Offset(stroke / 2, stroke / 2),
-                    size = Size(size.width - stroke, size.height - stroke),
-                    style = Stroke(width = stroke),
-                )
-            }
-            .padding(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AmountSwitchSeg(label = "显示", selected = !hide, onClick = { if (hide) onToggle() })
-        AmountSwitchSeg(label = "隐藏", selected = hide, onClick = { if (!hide) onToggle() })
-    }
-}
-
-@Composable
-private fun AmountSwitchSeg(label: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .background(if (selected) Px.Grass.copy(alpha = 0.35f) else Color.Transparent)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        PxText(label, size = 11.sp, color = if (selected) Px.GrassDark else Px.GrayText)
-    }
+    PixelSegSwitch(hidden = hide, onToggle = onToggle)
 }

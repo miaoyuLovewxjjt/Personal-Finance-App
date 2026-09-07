@@ -36,23 +36,23 @@ object PixelIcons {
         'n' to N, 'N' to ND, 'r' to R, 't' to T,
     )
 
-    /* ================= 账本 ================= */
+    /* ================= 账本（厚书/魔法书：封面 + 书签带 + 页口，无格纹） ================= */
     val ledger = Def("ledger", basePalette, listOf(
         "................",
-        ".bbbbbbbbbbbbbb.",
+        "..bbbbbbbbbbbb..",
         ".bCCCCCCCCCCCCb.",
         ".bCCCCCCCCCCCCb.",
-        ".bCwwwwwwwwwwCb.",
-        ".bCwCCCCCCCCwCb.",
-        ".bCwCCCCCCCCwCb.",
-        ".bCwwwwwwwwwwCb.",
-        ".bCCyyCCCCyyCCb.",
+        ".bCyyCCCCCCyyCb.",   // 书名条(暖黄)
         ".bCCCCCCCCCCCCb.",
         ".bCCCCCCCCCCCCb.",
-        ".bwwwwwwwwwwwwb.",
-        ".bwwwwwwwwwwwwb.",
-        ".bbbbbbbbbbbbbb.",
-        "................",
+        ".bCCCCCCCCCCCCb.",
+        ".bCCCCCCCCCCCCb.",
+        ".bCbbCCCCCCbbCb.",   // 装饰
+        ".bCCCCCCCCCCCCb.",
+        ".bCCCCCCCCCCCCb.",
+        ".bNNNNNNNNNNNNb.",   // 底部书脊厚边
+        "..bbbbbbbbbbbb..",
+        "..yYYYYYYYYYy...",   // 书签带
         "................",
     ))
 
@@ -136,41 +136,181 @@ object PixelIcons {
         "................",
     ))
 
-    /* ================= 右箭头（账本卡片/折叠）居中三角 ================= */
+    /* ================= 右箭头（收起=向右三角）：左侧竖直底边宽，向右收尖 ================= */
     val chevronR = Def("chevronR", basePalette, listOf(
         "................",
         "................",
         "................",
         "................",
         "................",
+        "..YYYYYYYY......",
+        "..YYYYYYYYYY....",
+        "..YYYYYYYYYYYY..",
+        "..YYYYYYYYYYYY..",
+        "..YYYYYYYYYY....",
+        "..YYYYYYYY......",
         "................",
-        "......bb........",
-        ".....bYYb.......",
-        "....bYYYYb......",
-        "...bYYYYYYb.....",
-        "....bYYYYb......",
-        ".....bYYb.......",
-        "......bb........",
+        "................",
         "................",
         "................",
         "................",
     ))
 
-    /* ================= 左箭头（导航折叠）居中三角（chevronR 镜像） ================= */
+    /* ================= 左箭头（展开=向左三角）：右侧竖直底边宽，向左收尖 ================= */
     val chevronL = Def("chevronL", basePalette, listOf(
         "................",
         "................",
         "................",
         "................",
         "................",
+        "......YYYYYY....",
+        "....YYYYYYYYYY..",
+        "..YYYYYYYYYYYY..",
+        "..YYYYYYYYYYYY..",
+        "....YYYYYYYYYY..",
+        "......YYYYYY....",
         "................",
-        "........bb......",
-        ".......bYYb.....",
-        "......bYYYYb....",
-        ".....bYYYYYYb...",
-        "......bYYYYb....",
-        ".......bYYb.....",
-        "........bb......",
+        "................",
+        "................",
+        "................",
+        "................",
+    ))
+
+    /* ================= 微信（绿色对话气泡，两只白眼睛） ================= */
+    val chat = Def("chat", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "..bbbbbbbbbbb...",
+        ".bGGGGGGGGGGb...",
+        ".bGbbbbbbbGGb...",
+        ".bGbwwbwwbGGb...",
+        ".bGwwbwwbwGGb...",
+        ".bGGGGGGGGGGb...",
+        ".bGGGGGGGbbb....",
+        "..bbbbbbbbb.....",
+        "................",
+        "................",
+        "................",
+    ))
+
+    /* ================= 支付宝（天蓝盾牌 + 白芯，可爱风） ================= */
+    val alipay = Def("alipay", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        ".....bSSSSb.....",
+        "....bSSSSSSb....",
+        "...bSSSSSSSSb...",
+        "..bSSSbbbbSSSb..",
+        "..bSSbwwwwbSSb..",
+        "..bSSbwwwwbSSb..",
+        "..bSSbwwwwbSSb..",
+        "...bSSSSSSSSb...",
+        "....bSSSSSSb....",
+        ".....bSSSSb.....",
+        "......bbbb......",
+        "................",
+        "................",
+    ))
+
+    /* ================= 账户（身份证卡片：木棕描边卡身 + 左上人像 + 右侧姓名/编号条） ================= */
+    val idcard = Def("idcard", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        "..bbbbbbbbbbbb..",
+        ".bNNNNNNNNNNNNb.",
+        ".bNwwwwwwwwwwNb.",
+        ".bNwyywbbwwwwNb.",   // 人像头
+        ".bNwyywbbwyywNb.",   // 人像脸+肩
+        ".bNwwwbbwwwwwNb.",
+        ".bNwbbbwwwwwwNb.",
+        ".bNwwwwwwwwwwNb.",
+        ".bNwYYYYYYYwwNb.",   // 姓名条
+        ".bNwwwwwwwwwwNb.",
+        ".bNNNNNNNNNNNNb.",
+        ".bbbbbbbbbbbbbb.",
+        "................",
+    ))
+
+    /* ================= 资产账户（钱袋子：束口袋身 + 收口 + 币标） ================= */
+    val bankCard = Def("bankCard", basePalette, listOf(
+        "................",
+        "......bbbb......",
+        ".....bYYYYb.....",
+        ".....byyyyb.....",   // 束口带
+        "....bNNNNNNb....",
+        "...bNNNNNNNNb...",
+        "..bNNNNNNNNNNb..",
+        "..bNNbNNNNbNNb..",   // 袋身
+        "..bNNbYYYYbNNb..",
+        "..bNNNNNNNNNNb..",
+        "..bNNNNNNNNNNb..",
+        "...bNNNNNNNNb...",
+        "....bNNNNNNb....",
+        ".....bbbbbb.....",
+        "................",
+        "................",
+    ))
+
+    /* ================= 记账明细图标（账单/票据：标题条 + 三行明细横线 + 底部锯齿） ================= */
+    val book = Def("book", basePalette, listOf(
+        "................",
+        "................",
+        "..bbbbbbbbbbbb..",
+        "..byyyyyyyyyyb..",   // 标题条(暖黄)
+        "..bwwwwwwwwwwb..",
+        "..bwbbbwbbbwwb..",   // 明细行
+        "..bwwwwwwwwwwb..",
+        "..bwbbbwbbbwwb..",
+        "..bwwwwwwwwwwb..",
+        "..bwbbbwbbbwwb..",
+        "..bwwwwwwwwwwb..",
+        "..bbbbbbbbbbbb..",
+        "....bbb..bbb....",   // 锯齿底
+        "...bbb....bbb...",
+        "................",
+        "................",
+    ))
+
+    /* ================= 折叠导航：纯三角（左）——无框，展开态点击收起 ================= */
+    val triL = Def("triL", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        "......bbb.......",
+        ".....byyyb......",
+        "....byyyyyb.....",
+        "...byyyyyyyb....",
+        "..byyyyyyyyyb...",
+        "...byyyyyyyb....",
+        "....byyyyyb.....",
+        ".....byyyb......",
+        "......bbb.......",
+        "................",
+        "................",
+        "................",
+        "................",
+    ))
+
+    /* ================= 折叠导航：纯三角（右）——无框，收起态点击展开 ================= */
+    val triR = Def("triR", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        ".......bbb......",
+        "......byyyb.....",
+        ".....byyyyyb....",
+        "....byyyyyyyb...",
+        "...byyyyyyyyyb..",
+        "....byyyyyyyb...",
+        ".....byyyyyb....",
+        "......byyyb.....",
+        ".......bbb......",
+        "................",
         "................",
         "................",
         "................",
@@ -216,42 +356,46 @@ object PixelIcons {
         "................",
     ))
 
-    /* ================= 编辑（铅笔，对角居中） ================= */
+    /* ================= 编辑（铅笔：粗笔身 + 木质 + 笔尖） ================= */
     val pencil = Def("pencil", basePalette, listOf(
         "................",
-        "..............b.",
-        "............nNb.",
-        "...........nNb..",
-        "..........nNb...",
-        ".........nNb....",
-        "........nNb.....",
-        ".......nNb......",
-        "......nNb.......",
-        ".....nNb........",
-        "....nNb.........",
-        "...nNb..........",
-        "..nNb...........",
-        "..bOOOb.........",
-        ".bOOOOOb........",
-        "..bbbbb.........",
+        "................",
+        ".............bb.",
+        "............bNNb",
+        "...........bNNNb",
+        "..........bNNNNb",
+        ".........bNNNNb.",
+        "........bYYYYb..",
+        ".......bYYYYb...",
+        "......bYYYYb....",
+        ".....bYYYYb.....",
+        "....bYYYYb......",
+        "...bNNNNb.......",
+        "..bNNNNb........",
+        "..bbbb..........",
+        "................",
     ))
 
-    /* ================= 删除（垃圾桶） ================= */
-    val trash = Def("trash", basePalette, listOf(
+    /* ================= 删除（垃圾桶：铁皮垃圾箱正视——宽盖 + 开口 + 微梯形桶身 + 竖纹） ================= */
+    private val trashPalette = basePalette + mapOf(
+        'r' to 0xFF8B3A2E.toInt(),   // 暗红棕(桶身)
+        'R' to 0xFF5F2A20.toInt(),   // 更暗(盖/开口/竖纹/底)
+    )
+    val trash = Def("trash", trashPalette, listOf(
         "................",
-        "....bbbbbb......",
-        "....bNyyNbb.....",
-        ".bbbNbbbbNbbbb..",
-        ".bNNNNNNNNNNNb..",
-        ".bNyNNNNNNyNNb..",
-        ".bNyyNNNNyyNNb..",
-        ".bNyNNNNNNyNNb..",
-        ".bNyyNNNNyyNNb..",
-        ".bNyNNNNNNyNNb..",
-        ".bNyyNNNNyyNNb..",
-        ".bNNNNNNNNNNNb..",
-        ".bNNNNNNNNNNNb..",
-        "..bbbbbbbbbbbb..",
+        "................",
+        "................",
+        "................",
+        "..bbbbbbbbbbbb..",   // 盖(深棕描边)
+        "..bRRRRRRRRRRb..",   // 盖面(深红)
+        "..brrrrrrrrrrb..",   // 盖沿
+        "...bRrRrRrRrb...",   // 桶身开口(微收)
+        "...brRrrRrrRb...",
+        "...brRrrRrrRb...",
+        "...brRrrRrrRb...",
+        "...bRrrrrrrRb...",
+        "....bRRRRRRb....",   // 底收
+        "....bbbbbbbb....",
         "................",
         "................",
     ))
@@ -536,6 +680,26 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 日历（明细导航，棕色可爱·直面图）：挂环顶条 + 木框 + 奶油纸页 + 3×3 日期点阵 ================= */
+    val calendarCute = Def("calendarCute", basePalette, listOf(
+        "................",
+        "....bbbbbbbb....",
+        "....byyyyyyb....",
+        "..bbbbbbbbbbbb..",
+        "..bnnnnnnnnnnb..",
+        ".bnnwwwwwwwwNNb.",
+        ".bnnwbwwbwwbNNb.",
+        ".bnnwwwwwwwwNNb.",
+        ".bnnwbwwbwwbNNb.",
+        ".bnnwwwwwwwwNNb.",
+        ".bnnwbwwbwwbNNb.",
+        ".bnnwwwwwwwwNNb.",
+        ".bnnnnnnnnnnnnb.",
+        ".bbbbbbbbbbbbbb.",
+        "................",
+        "................",
+    ))
+
     /* ================= 天气：晴 ================= */
     val sun = Def("sun", basePalette, listOf(
         "................",
@@ -656,27 +820,27 @@ object PixelIcons {
         "................",
     ))
 
-    /** 返回箭头（粗实心暖黄，尖朝左，深棕描边） */
+    /** 返回箭头：标准「←」——实心尖三角 + 自三角中部向右伸出的细水平杆 */
     val back = Def("back", basePalette, listOf(
         "................",
         "................",
         "................",
         "................",
-        "..bbbbbbbbbbb...",
-        "..byyyyyyyyyb...",
-        ".byyyyyyyyyyb...",
-        ".byyyyyyyyyyb...",
-        ".byyyyyyyyyyb...",
-        ".byyyyyyyyyyb...",
-        "..byyyyyyyyyb...",
-        "..bbbbbbbbbbb...",
+        "................",
+        ".....bbb........",
+        "....byyyb.......",
+        "...byyyybbbbbb..",
+        "...byyyybbbbbb..",
+        "....byyyb.......",
+        ".....bbb........",
+        "................",
         "................",
         "................",
         "................",
         "................",
     ))
 
-    /** 下拉箭头：居中菱形 */
+    /** 下拉/折叠展开箭头：居中实心向下三角（星露谷折页风格） */
     val chevronD = Def("chevronD", basePalette, listOf(
         "................",
         "................",
@@ -684,13 +848,13 @@ object PixelIcons {
         "................",
         "................",
         "................",
-        ".......bb.......",
-        "......bYYb......",
-        ".....bYYYYb.....",
-        "....bYYYYYYb....",
-        ".....bYYYYb.....",
-        "......bYYb......",
-        ".......bb.......",
+        "..YYYYYYYYYYYY..",
+        "...YYYYYYYYYY...",
+        "....YYYYYYYY....",
+        ".....YYYYYY.....",
+        "......YYYY......",
+        "......YYYY......",
+        "................",
         "................",
         "................",
         "................",
@@ -758,11 +922,14 @@ object PixelIcons {
         "ledger" -> ledger; "coin" -> coin; "coinPile" -> coinPile; "plus" -> plus
         "chevronR" -> chevronR; "chevronL" -> chevronL; "chevronD" -> chevronD; "back" -> back
         "collapseL" -> collapseL; "collapseR" -> collapseR
+        "triL" -> triL; "triR" -> triR
+        "bankCard" -> bankCard; "book" -> book; "chat" -> chat; "alipay" -> alipay
+        "idcard" -> idcard
         "pencil" -> pencil; "trash" -> trash; "burger" -> burger; "car" -> car
         "bag" -> bag; "gamepad" -> gamepad; "house" -> house; "bills" -> bills
         "medkit" -> medkit; "dots" -> dots; "income" -> income; "expense" -> expense
         "gift" -> gift; "giftRed" -> giftRed; "calendar" -> calendar
-        "calendarGold" -> calendarGold; "sun" -> sun; "cloud" -> cloud
+        "calendarGold" -> calendarGold; "calendarCute" -> calendarCute; "sun" -> sun; "cloud" -> cloud
         "rain" -> rain; "snow" -> snow; "chest" -> chest
         "windy" -> windy; "statChart" -> statChart
         "gear" -> gear; "export" -> export

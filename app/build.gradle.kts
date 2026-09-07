@@ -38,6 +38,10 @@ android {
     }
 
     buildTypes {
+        // debug 也使用项目正式 keystore 签名：debug/release 可互相覆盖安装，不出现签名不一致
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("release")

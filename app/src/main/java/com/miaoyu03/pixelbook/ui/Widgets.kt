@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.miaoyu03.pixelbook.R
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.atan2
@@ -97,11 +99,46 @@ val LocalLedgerFont = androidx.compose.runtime.staticCompositionLocalOf<androidx
 
 /* ---------------- 图标 ---------------- */
 
+/**
+ * 手绘图标映射（用户手绘 → drawable 资源）。命中的图标直接用位图绘制（按 dp 缩放），
+ * 未命中的回退到 16x16 像素字符画 PixelIcons。
+ */
+val handDrawnIcons: Map<String, Int> = mapOf(
+    "trash" to R.drawable.ic_px_trash,
+    "back" to R.drawable.ic_px_back,
+    "gear" to R.drawable.ic_px_gear,
+    "calendarCute" to R.drawable.ic_px_calendar,
+    "chest" to R.drawable.ic_px_chest,
+    "bankCard" to R.drawable.ic_px_wallet,
+    "idcard" to R.drawable.ic_px_account,
+    "ledger" to R.drawable.ic_px_ledger,
+)
+
 @Composable
 fun PixelIcon(name: String, size: Dp = 32.dp, desc: String? = null) {
-    val bmp = remember(name) { PixelIcons.get(name) }
+    val handRes = handDrawnIcons[name]
+    if (handRes != null) {
+        // 手绘位图：解码为 ImageBitmap 后按像素硬边渲染（FilterQuality.None），保持马赛克感
+        val ctx = LocalContext.current
+        val bmp = remember(handRes) {
+            val opt = android.graphics.BitmapFactory.Options().apply { inScaled = false }
+            android.graphics.BitmapFactory.decodeResource(ctx.resources, handRes, opt)?.asImageBitmap()
+        }
+        if (bmp != null) {
+            Image(
+                bitmap = bmp,
+                contentDescription = desc,
+                filterQuality = FilterQuality.None,
+                modifier = Modifier
+                    .size(size)
+                    .then(if (desc != null) Modifier.semantics { this.contentDescription = desc } else Modifier),
+            )
+            return
+        }
+    }
+    val bmp2 = remember(name) { PixelIcons.get(name) }
     Image(
-        bitmap = bmp,
+        bitmap = bmp2,
         contentDescription = desc,
         filterQuality = FilterQuality.None,
         modifier = Modifier
@@ -350,7 +387,7 @@ fun PixelDropdown(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (sel?.icon != null) { PixelIcon(sel.icon, size = 22.dp); Spacer(Modifier.width(6.dp)) }
-                PxText(sel?.name ?: "请选择", size = 13.sp)
+                PxText(sel?.name ?: "请选择", size = dropdownTextSize(sel?.name?.length ?: 0), maxLines = 1)
             }
             Spacer(Modifier.weight(1f))
             PixelIcon("chevronD", size = 12.dp)
@@ -369,13 +406,20 @@ fun PixelDropdown(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (opt.icon != null) { PixelIcon(opt.icon, size = 26.dp); Spacer(Modifier.width(8.dp)) }
-                    PxText(opt.name, size = 14.sp, color = opt.color)
-                    Spacer(Modifier.weight(1f))
+                    PxText(opt.name, size = dropdownTextSize(opt.name.length), color = opt.color, modifier = Modifier.weight(1f))
                     if (isSel) PixelIcon("chevronR", size = 16.dp)
                 }
             }
         }
     }
+}
+
+/** 下拉选项文字自适应：越长字号越小，保证超长（如资产 10+20 字）全量显示不截断 */
+private fun dropdownTextSize(charLen: Int): TextUnit = when {
+    charLen > 18 -> 10.sp
+    charLen > 12 -> 11.sp
+    charLen > 8 -> 12.sp
+    else -> 14.sp
 }
 
 /* ---------------- 对话框 ---------------- */
@@ -392,7 +436,8 @@ fun PixelDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        // 整体避让软键盘：键盘弹出时对话框收缩到键盘上方的可视区，不遮挡输入框
+        Box(modifier = Modifier.fillMaxSize().imePadding()) {
             // 背景 scrim：只在面板外点击时关闭
             Box(
                 modifier = Modifier
@@ -400,13 +445,14 @@ fun PixelDialog(
                     .background(Color(0x883A2718))
                     .clickable(onClick = onDismiss),
             )
-            // 面板：pointerInput 吞掉自身区域点击，防止冒泡到 scrim 误关
+            // 面板：置于 scrim 之上；面板区域内点击不会冒泡到 scrim（Compose 命中顶层），无需额外吞手势，
+            // 否则会拦截内部滚动（表单/长列表滑动失效）
             PixelPanel(
                 modifier = modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
                     .widthIn(max = 356.dp)
-                    .then(Modifier.pointerInput(Unit) { detectTapGestures { } }),
+                    .heightIn(max = 640.dp),
                 bg = Px.Cream,
                 contentPadding = 14.dp,
             ) {
@@ -445,14 +491,23 @@ fun PixelConfirm(
 
 /* ---------------- 像素日历弹窗 ---------------- */
 
+/**
+ * 日历弹窗：默认选择日期用（无副标题）；
+ * 传入 dayBalances（日期 → 当日结余(分)）时，每天下方显示当日结余小字，
+ * 正数草绿带「+」、负数陶土深带「-」、恰好为 0 显示灰色 0。
+ */
 @Composable
 fun PixelCalendarDialog(
     initial: LocalDate,
     onPick: (LocalDate) -> Unit,
     onDismiss: () -> Unit,
+    dayBalances: Map<LocalDate, Long>? = null,
 ) {
     var ym by remember { mutableStateOf(YearMonth.from(initial)) }
     var selected by remember { mutableStateOf(initial) }
+    val withBalance = dayBalances != null
+    // 带结余时格子更高：金额大一些，超长金额在格子内居中换行（最多两行），不凌乱
+    val cellH = if (withBalance) 66.dp else 44.dp
     PixelDialog(title = "选择日期", onDismiss = onDismiss) {
         // 月份切换
         Row(
@@ -483,10 +538,11 @@ fun PixelCalendarDialog(
                     val d = if (v > 0) ym.atDay(v) else null
                     val isSel = d == selected
                     val isToday = d == LocalDate.now()
+                    val balance = if (d != null) dayBalances?.get(d) else null
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
+                            .height(cellH)
                             .then(if (d != null) Modifier.clickable { selected = d; onPick(d) } else Modifier)
                             .background(if (isSel) Px.Grass.copy(alpha = 0.45f) else Color.Transparent)
                             .drawBehind {
@@ -503,13 +559,47 @@ fun PixelCalendarDialog(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (d != null) {
-                            PxText("$v", size = 13.sp, color = if (isSel) Px.GrassDark else if (isToday) Px.ClayDark else Px.Brown)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                // 日历数字固定用像素字体（账本字体在小字号下会发虚）
+                                PxText(
+                                    "$v",
+                                    size = 13.sp,
+                                    color = if (isSel) Px.GrassDark else if (isToday) Px.ClayDark else Px.Brown,
+                                    font = pixFont(),
+                                )
+                                if (balance != null) {
+                                    Spacer(Modifier.height(2.dp))
+                                    val (txt, col) = balanceSub(balance)
+                                    PxText(
+                                        txt,
+                                        size = 12.sp,
+                                        color = col,
+                                        align = TextAlign.Center,
+                                        maxLines = 2,
+                                        font = pixFont(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * 日历结余小字：正数带「+」草绿 / 负数带「-」陶土深 / 0 灰。
+ * 直接显示实际金额（千分位、小数尾 0 去除）；过宽时在格子内居中换行（最多两行），不缩写。
+ */
+private fun balanceSub(b: Long): Pair<String, Color> {
+    val col = if (b > 0) Px.GrassDark else if (b < 0) Px.ClayDark else Px.GrayText
+    if (b == 0L) return "0" to col
+    val sign = if (b > 0) "+" else "-"
+    val money = com.miaoyu03.pixelbook.data.Fmt.money(kotlin.math.abs(b))
+    val txt = sign + if (money.contains('.')) money.trimEnd('0').trimEnd('.') else money
+    return txt to col
 }
 
 /* ---------------- 像素环形占比图 ---------------- */
@@ -797,4 +887,46 @@ fun PixelTag(text: String, bg: Color, textColor: Color = Px.Cream) {
 
 fun Context.toast(msg: String) {
     Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
+
+/* ---------------- 两段式显示开关（显示/隐藏 金额等敏感信息，存款明细同款） ---------------- */
+
+@Composable
+fun PixelSegSwitch(
+    showLabel: String = "显示",
+    hideLabel: String = "隐藏",
+    hidden: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .background(Px.Cream)
+            .drawBehind {
+                val stroke = 2.dp.toPx()
+                drawRect(
+                    Px.Brown,
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke),
+                )
+            }
+            .padding(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PixelSegSwitchSeg(label = showLabel, selected = !hidden, onClick = { if (hidden) onToggle() })
+        PixelSegSwitchSeg(label = hideLabel, selected = hidden, onClick = { if (!hidden) onToggle() })
+    }
+}
+
+@Composable
+private fun PixelSegSwitchSeg(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(if (selected) Px.Grass.copy(alpha = 0.35f) else Color.Transparent)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        PxText(label, size = 11.sp, color = if (selected) Px.GrassDark else Px.GrayText)
+    }
 }

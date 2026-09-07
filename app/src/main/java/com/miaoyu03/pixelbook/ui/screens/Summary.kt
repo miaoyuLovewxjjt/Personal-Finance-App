@@ -1,4 +1,4 @@
-package com.miaoyu03.pixelbook.ui.screens
+﻿package com.miaoyu03.pixelbook.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -206,7 +206,7 @@ fun MonthScreen(
                         if (store.archiveMonth(ledgerId, ym, balance)) {
                             store.markSynced(ledgerId, ym)
                             tick++
-                            store.toast("已把结余 ${moneyInt(balance)} 元归档到存款明细")
+                            store.toast("已把结余 ${moneyInt(balance)} 元归档到我的存款")
                         } else {
                             store.toast("归档失败：存款写入未成功，请检查存储后重试")
                         }
@@ -469,7 +469,7 @@ private fun PanelDivider() {
     Spacer(Modifier.height(8.dp))
 }
 
-/** 横排行：文字在左，数字在右，独占一行（无底色） */
+/** 横排行：文字在左，数字在右，独占一行；数字过长时仅在数字区域内自动换行（不挤压左侧文字） */
 @Composable
 private fun StatLine(label: String, value: String, color: Color) {
     Row(
@@ -479,8 +479,13 @@ private fun StatLine(label: String, value: String, color: Color) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PxText(label, size = 12.sp, color = Px.GrayText)
-        Spacer(Modifier.weight(1f))
-        PxText(value, size = 14.sp, color = color)
+        Spacer(Modifier.width(10.dp))
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            PxText(
+                value, size = 14.sp, color = color,
+                align = TextAlign.End, modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
@@ -510,7 +515,7 @@ private fun StatBox(
     }
 }
 
-/** 最大收入/花销行：文字在左，右侧 日期 + 分类·名称 + 金额（无正负号） */
+/** 最大收入/花销行：文字在左，中 日期+名称（仅文字区换行），右 金额（独立不被挤压，无正负号） */
 @Composable
 private fun MaxTxLine(label: String, tx: Tx?, color: Color) {
     Row(
@@ -520,18 +525,17 @@ private fun MaxTxLine(label: String, tx: Tx?, color: Color) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PxText(label, size = 12.sp, color = Px.GrayText)
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
         if (tx == null) {
             PxText("—", size = 13.sp, color = Px.GrayText)
         } else {
-            // 日期（如 9.2）+ 分类 · 名称
+            // 日期（如 9.2）+ 分类 · 名称：只占文字实际需要宽度，过长在剩余宽度内换行
             PxText(
                 "${tx.date.monthValue}.${tx.date.dayOfMonth}  ${tx.category}" +
                     if (tx.name.isNotEmpty()) " · ${tx.name}" else "",
                 size = 11.sp,
                 color = Px.Brown,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
             Spacer(Modifier.width(8.dp))
             PxText(Fmt.yen(tx.amount), size = 13.sp, color = color)
@@ -613,8 +617,7 @@ private fun CategoryDonutCard(
                 ) {
                     PixelIcon(PixelIcons.iconOfCategory(c), size = 15.dp)
                     Spacer(Modifier.width(5.dp))
-                    PxText(c, size = 12.sp, color = if (isHidden) Px.GrayText else Px.Brown)
-                    Spacer(Modifier.weight(1f))
+                    PxText(c, size = 12.sp, color = if (isHidden) Px.GrayText else Px.Brown, modifier = Modifier.weight(1f))
                     // 隐藏的分类当前不可见，占比显示 0%
                     PxText(if (isHidden) "0%" else "${pctOf(v, total)}%", size = 12.sp, color = Px.GrayText)
                 }

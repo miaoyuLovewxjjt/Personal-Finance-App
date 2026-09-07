@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,13 +45,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.miaoyu03.pixelbook.data.Cents
 import com.miaoyu03.pixelbook.data.Fmt
 import com.miaoyu03.pixelbook.data.IncomeCats
 import com.miaoyu03.pixelbook.data.Ledger
+import com.miaoyu03.pixelbook.data.MAX_CAT_LEN
+import com.miaoyu03.pixelbook.data.MAX_NOTE_LEN
+import com.miaoyu03.pixelbook.data.MAX_TX_NAME_LEN
 import com.miaoyu03.pixelbook.data.Store
 import com.miaoyu03.pixelbook.data.Tx
 import com.miaoyu03.pixelbook.data.TxDir
 import com.miaoyu03.pixelbook.data.Weather
+import com.miaoyu03.pixelbook.data.fullLabel
+import com.miaoyu03.pixelbook.data.label
 import com.miaoyu03.pixelbook.export.PdfExporter
 import com.miaoyu03.pixelbook.ui.DonutSeg
 import com.miaoyu03.pixelbook.ui.LedgerFonts
@@ -95,7 +104,6 @@ fun DetailScreen(
     ledgerId: String,
     onBack: () -> Unit,
     onAdd: (LocalDate) -> Unit,
-    onDeposits: () -> Unit,
     onMonth: (String) -> Unit,
     onYear: (Int) -> Unit,
 ) {
@@ -104,9 +112,23 @@ fun DetailScreen(
     var editingTx by remember { mutableStateOf<Tx?>(null) }
     var addingDir by remember { mutableStateOf<TxDir?>(null) }
     var deletingTx by remember { mutableStateOf<Tx?>(null) }
+    var showCal by remember { mutableStateOf(false) }
+    var editingBudget by remember { mutableStateOf(false) }
 
     val ledger = remember(tick) { store.ledger(ledgerId) }
     val all = remember(tick) { store.txList(ledgerId) }
+    // 本账本资产账户映射（流水行显示入账资产名用）
+    val assetLabelById: Map<String, String> = remember(tick, ledger?.accountId) {
+        ledger?.accountId?.let { acc -> store.assetsOf(acc).associate { it.id to it.label() } } ?: emptyMap()
+    }
+    // 每日结余（收入-支出，分）：日历弹窗逐日小字展示用
+    val dayBalances = remember(all) {
+        all.groupBy { it.date }.mapValues { (_, v) ->
+            v.sumOf { if (it.dir == TxDir.IN) it.amount else -it.amount }
+        }
+    }
+    // 当前所选日期当天的花销预算（分，未设置为 null）
+    val dailyBudget = remember(tick, selectedDate) { store.dailyBudget(ledgerId, selectedDate) }
 
     // 导出 PDF：SAF 让用户选择保存位置 → IO 线程生成
     val appCtx = LocalContext.current.applicationContext
@@ -147,12 +169,10 @@ fun DetailScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         PixelHeader(
             // 标题 = 账本名（居中、长名自动换行；新建/编辑时限制 30 字内）
-            title = ledger?.name ?: "记账明细",
+            title = ledger?.name ?: "记账簿",
             onBack = onBack,
             trailing = {
-                // 右起：财富明细 → 导出（最右）
-                PixelIconButton(icon = "chest", size = 34.dp, onClick = onDeposits, desc = "存款明细")
-                Spacer(Modifier.width(4.dp))
+                // 存款明细入口已移至「我的记账」账户主页，此处仅保留导出
                 PixelIconButton(
                     icon = "export", size = 34.dp,
                     onClick = {
@@ -167,9 +187,9 @@ fun DetailScreen(
         )
 
         Row(modifier = Modifier.fillMaxSize()) {
-            // ---- 左侧导航：年→月→日 折叠展开；标题点击跳总结页，箭头点击展开子级。
-            //      顶部折叠按钮可把整个导航收缩到左侧窄条 ----
-            Column(
+            // ---- 左侧导航：日历（最上方居中）→ 年→月→日 折叠展开；
+            //      折叠开关为骑在右侧分隔竖线上、垂直居中的精简小三角 ----
+            Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .width(if (navCollapsed) 38.dp else 96.dp)
@@ -183,84 +203,108 @@ fun DetailScreen(
                         )
                     },
             ) {
-                // 顶部折叠 / 展开按钮（方框箭头，贴导航栏与明细交界线；右侧留距不压住分割竖线）
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                        .padding(end = 6.dp),
-                    contentAlignment = Alignment.CenterEnd,
-                ) {
-                    PixelIconButton(
-                        icon = if (navCollapsed) "collapseR" else "collapseL",
-                        size = 30.dp,
-                        bg = Px.Cream,
-                        onClick = { navCollapsed = !navCollapsed },
-                        desc = if (navCollapsed) "展开导航" else "折叠导航",
-                    )
-                }
                 if (!navCollapsed) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(vertical = 8.dp),
-                    ) {
-                        years.forEach { y ->
-                            val yearExpanded = y in expandedYears
-                            NavYearRow(
-                                year = y,
-                                expanded = yearExpanded,
-                                selected = selectedDate.year == y,
-                                onTitleClick = { onYear(y) },
-                                onToggle = {
-                                    expandedYears = if (yearExpanded) expandedYears - y else expandedYears + y
-                                },
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // 日历图标：导航最上方居中；点击打开带「每日结余」的日历
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp, bottom = 2.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            PixelIconButton(
+                                icon = "calendarCute",
+                                size = 30.dp,
+                                bg = Px.Cream,
+                                onClick = { showCal = true },
+                                desc = "日历",
                             )
-                            if (yearExpanded) {
-                                val months = (1..12).map { YearMonth.of(y, it) }
-                                    .filter { m -> all.any { YearMonth.from(it.date) == m } }
-                                months.forEach { m ->
-                                    val key = Fmt.ymKey(m.atDay(1))
-                                    val monthExpanded = key in expandedMonths
-                                    NavMonthRow(
-                                        month = m,
-                                        expanded = monthExpanded,
-                                        selected = YearMonth.from(selectedDate) == m,
-                                        onTitleClick = { onMonth(key) },
-                                        onToggle = {
-                                            expandedMonths = if (monthExpanded) expandedMonths - key else expandedMonths + key
-                                        },
-                                    )
-                                    if (monthExpanded) {
-                                        val days = all.filter { YearMonth.from(it.date) == m }
-                                            .map { it.date.dayOfMonth }.distinct().sorted()
-                                        days.forEach { dayNum ->
-                                            val d = m.atDay(dayNum)
-                                            NavDayRow(
-                                                day = d,
-                                                selected = d == selectedDate,
-                                                onClick = { selectedDate = d },
-                                            )
+                        }
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = 8.dp),
+                        ) {
+                            years.forEach { y ->
+                                val yearExpanded = y in expandedYears
+                                NavYearRow(
+                                    year = y,
+                                    expanded = yearExpanded,
+                                    selected = selectedDate.year == y,
+                                    onTitleClick = { onYear(y) },
+                                    onToggle = {
+                                        expandedYears = if (yearExpanded) expandedYears - y else expandedYears + y
+                                    },
+                                )
+                                if (yearExpanded) {
+                                    val months = (1..12).map { YearMonth.of(y, it) }
+                                        .filter { m -> all.any { YearMonth.from(it.date) == m } }
+                                    months.forEach { m ->
+                                        val key = Fmt.ymKey(m.atDay(1))
+                                        val monthExpanded = key in expandedMonths
+                                        NavMonthRow(
+                                            month = m,
+                                            expanded = monthExpanded,
+                                            selected = YearMonth.from(selectedDate) == m,
+                                            onTitleClick = { onMonth(key) },
+                                            onToggle = {
+                                                expandedMonths = if (monthExpanded) expandedMonths - key else expandedMonths + key
+                                            },
+                                        )
+                                        if (monthExpanded) {
+                                            val days = all.filter { YearMonth.from(it.date) == m }
+                                                .map { it.date.dayOfMonth }.distinct().sorted()
+                                            days.forEach { dayNum ->
+                                                val d = m.atDay(dayNum)
+                                                NavDayRow(
+                                                    day = d,
+                                                    selected = d == selectedDate,
+                                                    onClick = { selectedDate = d },
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                        // 底部固定「+」按钮（草绿底，新增所选日期的那一天）
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            PixelIconButton(
+                                icon = "plus",
+                                size = 40.dp,
+                                bg = Px.Grass,
+                                onClick = { onAdd(selectedDate) },
+                                desc = "新增某天",
+                            )
+                        }
                     }
-                    // 底部固定「+」按钮（草绿底，新增所选日期的那一天）
+                }
+                // 折叠开关：竖线中点一枚纯三角（无框、无涟漪）：展开态箭头向左，收起态箭头向右
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
+                            .size(30.dp)                       // 隐形热区，便于点击
+                            .clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null,             // 点击不产生阴影/底色闪烁
+                                onClick = { navCollapsed = !navCollapsed },
+                            )
+                            .offset(x = 14.dp),                // 让三角正好骑在右侧分隔竖线中点上
                         contentAlignment = Alignment.Center,
                     ) {
-                        PixelIconButton(
-                            icon = "plus",
-                            size = 40.dp,
-                            bg = Px.Grass,
-                            onClick = { onAdd(selectedDate) },
-                            desc = "新增某天",
+                        PixelIcon(
+                            if (navCollapsed) "triR" else "triL",
+                            size = 15.dp,
+                            desc = if (navCollapsed) "展开导航" else "折叠导航",
                         )
                     }
                 }
@@ -285,6 +329,12 @@ fun DetailScreen(
                     }
                 }
 
+                // 当日花销预算（在每日标题下方；点击可设置/修改/清除当天预算）
+                BudgetBar(
+                    budget = dailyBudget,
+                    onClick = { editingBudget = true },
+                )
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -303,7 +353,7 @@ fun DetailScreen(
                         item { EmptyNote("今天还没有收入，点击下方「＋」新增") }
                     } else {
                         items(inList, key = { it.id }) { t ->
-                            TxRow(t, onTap = { editingTx = t })
+                            TxRow(t, assetLabel = t.asset.takeIf { it.isNotEmpty() }?.let { assetLabelById[it] }, onTap = { editingTx = t })
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -326,7 +376,7 @@ fun DetailScreen(
                         item { EmptyNote("今天还没有支出，点击下方「＋」新增") }
                     } else {
                         items(outList, key = { it.id }) { t ->
-                            TxRow(t, onTap = { editingTx = t })
+                            TxRow(t, assetLabel = t.asset.takeIf { it.isNotEmpty() }?.let { assetLabelById[it] }, onTap = { editingTx = t })
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -335,11 +385,12 @@ fun DetailScreen(
                         AddDetailPlus(onClick = { addingDir = TxDir.OUT })
                         Spacer(Modifier.height(6.dp))
                     }
-                    // 今日总结：明细列表最下方（总收入/总支出/结余 + 最大收入/花销 + 花销占比）
+                    // 今日总结：明细列表最下方（总收入/总支出/结余 + 花销预算 + 最大收入/花销）
                     item {
                         TodaySummaryPanel(
                             inSum = inSum,
                             outSum = outSum,
+                            budget = dailyBudget,
                             inList = inList,
                             outList = outList,
                         )
@@ -382,6 +433,27 @@ fun DetailScreen(
             onDismiss = { deletingTx = null },
         )
     }
+
+    // 左侧日历按钮 → 打开带每日结余的日历（默认当前日期所在月，点某天切到那天）
+    if (showCal) {
+        PixelCalendarDialog(
+            initial = selectedDate,
+            dayBalances = dayBalances,
+            onPick = { d -> selectedDate = d; showCal = false },
+            onDismiss = { showCal = false },
+        )
+    }
+    // 预算设置弹窗（当天）
+    if (editingBudget) {
+        BudgetDialog(
+            store = store,
+            ledgerId = ledgerId,
+            date = selectedDate,
+            initial = dailyBudget,
+            onDismiss = { editingBudget = false },
+            onSaved = { editingBudget = false; tick++ },
+        )
+    }
 }
 
 private fun Weather.iconName(): String = when (this) {
@@ -390,17 +462,19 @@ private fun Weather.iconName(): String = when (this) {
 }
 
 
-/** 今日总结面板：明细列表最下方，含 总收入/总支出/今日结余、最大收入/花销、花销占比图 */
+/** 今日总结面板：明细列表最下方，含 总收入/总支出/今日结余、今日花销预算/花销超出、最大收入/花销 */
 @Composable
 private fun TodaySummaryPanel(
     inSum: Long,
     outSum: Long,
+    budget: Cents?,          // 当日预算（分）；null = 未设置
     inList: List<Tx>,
     outList: List<Tx>,
 ) {
     val balance = inSum - outSum
     val maxIn = inList.maxByOrNull { it.amount }
     val maxOut = outList.maxByOrNull { it.amount }
+    val over = if (budget != null) outSum - budget else 0L
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(16.dp))
@@ -408,6 +482,7 @@ private fun TodaySummaryPanel(
         Spacer(Modifier.height(8.dp))
 
         // 总览卡：总收入 / 总支出 / 今日结余 各独占一行（文字在左，数字在右）
+        //        + 今日花销预算 / 花销超出（未设置显示「未设置」；未超出显示「未超支」）
         //        + 今日最大收入 / 今日最大花销
         PixelPanel(
             modifier = Modifier
@@ -423,6 +498,24 @@ private fun TodaySummaryPanel(
                     "今日结余", Fmt.yen(balance),
                     if (balance >= 0) Px.GrassDark else Px.ClayDark,
                 )
+                SummaryValue(
+                    "今日花销预算",
+                    if (budget == null) "未设置" else Fmt.yen(budget),
+                    if (budget == null) Px.GrayText else Px.WoodDark,
+                )
+                SummaryValue(
+                    "花销超出",
+                    when {
+                        budget == null -> "—"
+                        over > 0 -> Fmt.yen(over)
+                        else -> "未超支"
+                    },
+                    when {
+                        budget == null -> Px.GrayText
+                        over > 0 -> Px.ClayDark
+                        else -> Px.GrassDark
+                    },
+                )
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -437,7 +530,7 @@ private fun TodaySummaryPanel(
     }
 }
 
-/** 总览行：文字在左，数字在右，独占一行（无底色） */
+/** 总览行：文字在左，数字在右，独占一行；数字过长时仅在数字区域内自动换行（不挤压左侧文字） */
 @Composable
 private fun SummaryValue(label: String, value: String, color: Color) {
     Row(
@@ -447,12 +540,18 @@ private fun SummaryValue(label: String, value: String, color: Color) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PxText(label, size = 12.sp, color = Px.GrayText)
-        Spacer(Modifier.weight(1f))
-        PxText(value, size = 14.sp, color = color)
+        Spacer(Modifier.width(10.dp))
+        // 数值区占满剩余宽度：短则右对齐单行；过长则在此区域内换行，绝不挤压标签
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            PxText(
+                value, size = 14.sp, color = color,
+                align = TextAlign.End, modifier = Modifier.fillMaxWidth(),
+            )
+        }
     }
 }
 
-/** 最大收入 / 最大花销行：左标签，右 名称 + 金额 */
+/** 最大收入 / 最大花销行：左标签，中 名称（仅文字区换行），右 金额（独立不被挤压） */
 @Composable
 private fun MaxSummaryRow(label: String, tx: Tx?, color: Color) {
     Row(
@@ -462,7 +561,7 @@ private fun MaxSummaryRow(label: String, tx: Tx?, color: Color) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PxText(label, size = 12.sp, color = Px.GrayText)
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
         if (tx == null) {
             PxText("—", size = 12.sp, color = Px.GrayText)
         } else {
@@ -470,14 +569,86 @@ private fun MaxSummaryRow(label: String, tx: Tx?, color: Color) {
                 tx.category + if (tx.name.isNotEmpty()) " · ${tx.name}" else "",
                 size = 11.sp,
                 color = Px.Brown,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),   // 只占文字实际需要的宽度；过长在剩余宽度内换行
             )
             Spacer(Modifier.width(8.dp))
             PxText(Fmt.yen(tx.amount), size = 12.sp, color = color)
         }
     }
 }
+
+/** 当日预算栏（每日标题正下方）：显示今日花销预算，点击弹出设置 */
+@Composable
+private fun BudgetBar(budget: Cents?, onClick: () -> Unit) {
+    PixelPanel(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp)   // 与下方「收入/支出」区块留出间距
+            .clickable(onClick = onClick),
+        bg = Px.Cream,
+        depth = 2.dp,
+        contentPadding = 8.dp,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            PixelIcon("coinPile", size = 18.dp)
+            Spacer(Modifier.width(6.dp))
+            PxText("今日预算", size = 12.sp, color = Px.Wood)
+            Spacer(Modifier.weight(1f))
+            PxText(
+                if (budget == null) "未设置" else Fmt.yen(budget),
+                size = 13.sp,
+                color = if (budget == null) Px.GrayText else Px.Brown,
+            )
+            Spacer(Modifier.width(4.dp))
+            PixelIcon("pencil", size = 15.dp, desc = "设置预算")
+        }
+    }
+}
+
+/** 当日预算设置弹窗：按天生效；金额留空 = 清除当天预算 */
+@Composable
+private fun BudgetDialog(
+    store: Store,
+    ledgerId: String,
+    date: LocalDate,
+    initial: Cents?,
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    var amount by remember { mutableStateOf(initial?.let { Fmt.money(it) } ?: "") }
+    PixelDialog(
+        title = "${Fmt.dayOfMonth(date)}花销预算",
+        onDismiss = onDismiss,
+        footer = {
+            PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
+            PixelButton(
+                "保存",
+                {
+                    val v = Fmt.parseCents(amount)
+                    if (v == null && amount.isNotBlank()) { store.toast("请填写有效金额"); return@PixelButton }
+                    if (store.setDailyBudget(ledgerId, date, v ?: 0L)) onSaved()
+                },
+                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
+            )
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PxText("预算金额（元）", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PixelTextField(
+                value = amount,
+                onValueChange = { amount = Fmt.cleanAmountInput(it) },
+                placeholder = "如：100",
+                numeric = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            PxText("按天设置，只作用于这一天；清空金额可删除当天预算。", size = 11.sp, color = Px.GrayText)
+        }
+    }
+}
+
 
 /** 明细区块末尾的「＋」：左下对齐，新增当天该类型明细（柔和黄底） */
 @Composable
@@ -595,7 +766,7 @@ private fun EmptyNote(text: String) {
 }
 
 @Composable
-private fun TxRow(t: Tx, onTap: () -> Unit) {
+private fun TxRow(t: Tx, assetLabel: String? = null, onTap: () -> Unit) {
     PixelPanel(
         modifier = Modifier
             .fillMaxWidth()
@@ -609,6 +780,11 @@ private fun TxRow(t: Tx, onTap: () -> Unit) {
             Spacer(Modifier.width(9.dp))
             Column(modifier = Modifier.weight(1f)) {
                 PxText(t.category + if (t.name.isNotEmpty()) " · ${t.name}" else "", size = 13.sp)
+                // 入账资产账户行（类别+子类别前10字；有角色直接显示角色）
+                if (assetLabel?.isNotEmpty() == true) {
+                    Spacer(Modifier.height(2.dp))
+                    PxText(assetLabel, size = 10.sp, color = Px.Wood)
+                }
                 if (t.note.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
                     PxText(
@@ -621,7 +797,7 @@ private fun TxRow(t: Tx, onTap: () -> Unit) {
             }
             Column(horizontalAlignment = Alignment.End) {
                 PxText(
-                    if (t.dir == TxDir.IN) "+${Fmt.yen(t.amount)}" else "-${Fmt.yen(t.amount)}",
+                    Fmt.yen(t.amount),   // 区块已分收入/支出，金额不再带正负号
                     size = 13.sp,
                     color = if (t.dir == TxDir.IN) Px.GrassDark else Px.WoodDark,
                 )
@@ -649,8 +825,15 @@ fun TxFormDialog(
 ) {
     val isIn = dir == TxDir.IN
     val now = java.time.LocalTime.now()
-    // 全局类表（设置中可维护；含「其他」）
-    val cats = if (isIn) store.incomeCats() else store.expenseCats()
+    // 账户维度：类别表 + 资产账户
+    val accountId = remember(tx) { store.ledger(ledgerId)?.accountId ?: "" }
+    val cats = remember(accountId) { if (isIn) store.incomeCats(accountId) else store.expenseCats(accountId) }
+    val assetOptions: List<Pair<String, String>> = remember(accountId) {
+        val list = if (accountId.isEmpty()) emptyList()
+        else store.assetsOf(accountId).map { it.id to it.fullLabel() }
+        android.util.Log.d("PixelDebug", "TxForm accountId=$accountId assets=${list.size} ${list.map { it.second }}")
+        list
+    }
     // 编辑历史记录时：类别不在类表中（如旧数据/已被删除）→ 归入「自定义」并预填输入框
     val catIsCustom = tx != null && tx.category !in cats
     var time by remember { mutableStateOf(tx?.time ?: "%02d:%02d".format(now.hour, now.minute)) }
@@ -659,6 +842,7 @@ fun TxFormDialog(
     var amountStr by remember { mutableStateOf(tx?.let { Fmt.money(it.amount) } ?: "") }
     var name by remember { mutableStateOf(tx?.name ?: "") }
     var note by remember { mutableStateOf(tx?.note ?: "") }
+    var assetId by remember { mutableStateOf(tx?.asset ?: "") }
     var showDelete by remember { mutableStateOf(false) }
 
     PixelDialog(
@@ -686,9 +870,9 @@ fun TxFormDialog(
                         if (c.isEmpty()) { store.toast("请输入自定义类别"); return@PixelButton }
                         c
                     } else cat
-                    // 新类别（不在类表中）自动加入全局类表，之后所有账本下拉都能直接选
-                    if (finalCat !in cats) {
-                        if (isIn) store.addIncomeCat(finalCat) else store.addExpenseCat(finalCat)
+                    // 新类别（不在类表中）自动加入该类账户的类别表，之后所有账本下拉都能直接选
+                    if (finalCat !in cats && accountId.isNotEmpty()) {
+                        if (isIn) store.addIncomeCat(accountId, finalCat) else store.addExpenseCat(accountId, finalCat)
                     }
                     if (tx == null) {
                         store.addTx(
@@ -696,11 +880,11 @@ fun TxFormDialog(
                                 id = "t${System.currentTimeMillis()}",
                                 ledgerId = ledgerId, date = date, time = t,
                                 dir = dir, category = finalCat, amount = v,
-                                name = name.trim(), note = note.trim(),
+                                name = name.trim(), note = note.trim(), asset = assetId,
                             )
                         )
                     } else {
-                        store.updateTx(tx.copy(time = t, category = finalCat, amount = v, name = name.trim(), note = note.trim()))
+                        store.updateTx(tx.copy(time = t, category = finalCat, amount = v, name = name.trim(), note = note.trim(), asset = assetId))
                     }
                     onSaved()
                 },
@@ -708,22 +892,33 @@ fun TxFormDialog(
             )
         },
     ) {
-        TxFormFields(
-            isIn = isIn,
-            time = time,
-            onTime = { time = it },
-            cat = cat,
-            onCat = { cat = it },
-            customCat = customCat,
-            onCustomCat = { customCat = it },
-            amount = amountStr,
-            onAmount = { amountStr = it },
-            name = name,
-            onName = { name = it },
-            note = note,
-            onNote = { note = it },
-            cats = cats,
-        )
+        // 表单体可滚动：软键盘弹出后仍能滚动查看/点选下方字段（含资产账户），边打字边看输入
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .heightIn(max = 420.dp),
+        ) {
+            TxFormFields(
+                isIn = isIn,
+                time = time,
+                onTime = { time = it },
+                cat = cat,
+                onCat = { cat = it },
+                customCat = customCat,
+                onCustomCat = { customCat = it },
+                amount = amountStr,
+                onAmount = { amountStr = it },
+                name = name,
+                onName = { name = it },
+                note = note,
+                onNote = { note = it },
+                cats = cats,
+                assetOptions = assetOptions,
+                assetSel = assetId,
+                onAsset = { assetId = it },
+            )
+        }
     }
 
     if (showDelete) {
@@ -757,6 +952,9 @@ fun TxFormFields(
     note: String,
     onNote: (String) -> Unit,
     cats: List<String> = emptyList(),   // 类表（含预设与已新增类别；空 = 用内置预设）
+    assetOptions: List<Pair<String, String>> = emptyList(),   // (id, 显示名) 资产账户列表；空 = 不显示
+    assetSel: String = "",               // 当前选中的资产账户 id
+    onAsset: (String) -> Unit = {},
 ) {
     val allCats = cats.ifEmpty {
         if (isIn) IncomeCats.list else com.miaoyu03.pixelbook.data.ExpenseCats.list
@@ -788,22 +986,53 @@ fun TxFormFields(
             PxText("自定义类别", size = 12.sp, color = Px.GrayText)
             Spacer(Modifier.height(4.dp))
             PixelTextField(
-                value = customCat, onValueChange = onCustomCat,
+                value = customCat,
+                onValueChange = { onCustomCat(Fmt.clip(it, MAX_CAT_LEN)) },   // 最长 10 汉字
                 placeholder = "如：宠物、旅行", modifier = Modifier.fillMaxWidth(),
             )
         }
         Spacer(Modifier.height(10.dp))
         PxText(if (isIn) "收入金额（元）" else "花销金额（元）", size = 12.sp, color = Px.GrayText)
         Spacer(Modifier.height(4.dp))
-        PixelTextField(value = amount, onValueChange = onAmount, placeholder = "如：43.00", numeric = true, modifier = Modifier.fillMaxWidth())
+        PixelTextField(
+            value = amount,
+            onValueChange = { onAmount(Fmt.cleanAmountInput(it)) },   // 最多 9 位整数 + 2 位小数
+            placeholder = "如：43.00", numeric = true, modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(Modifier.height(10.dp))
         PxText(if (isIn) "具体收入名称" else "具体花销名称", size = 12.sp, color = Px.GrayText)
         Spacer(Modifier.height(4.dp))
-        PixelTextField(value = name, onValueChange = onName, placeholder = "如：兰州拉面", modifier = Modifier.fillMaxWidth())
+        PixelTextField(
+            value = name,
+            onValueChange = { onName(Fmt.clip(it, MAX_TX_NAME_LEN)) },   // 最长 25 汉字
+            placeholder = "如：兰州拉面", modifier = Modifier.fillMaxWidth(),
+        )
         Spacer(Modifier.height(10.dp))
         PxText(if (isIn) "收入备注" else "花销备注", size = 12.sp, color = Px.GrayText)
         Spacer(Modifier.height(4.dp))
-        PixelTextField(value = note, onValueChange = onNote, placeholder = "可选", modifier = Modifier.fillMaxWidth())
+        PixelTextField(
+            value = note,
+            onValueChange = { onNote(Fmt.clip(it, MAX_NOTE_LEN)) },   // 最长 30 汉字
+            placeholder = "可选", modifier = Modifier.fillMaxWidth(),
+        )
+        // 资产账户：选择该笔收入/支出 到账/支付 的资产账户（银行/支付宝/微信…）
+        if (assetOptions.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            PxText(if (isIn) "到账资产账户" else "支付资产账户", size = 12.sp, color = Px.GrayText)
+            Spacer(Modifier.height(4.dp))
+            PixelDropdown(
+                label = if (isIn) "到账资产账户" else "支付资产账户",
+                options = listOf(PixelOption("不使用", "dots")) +
+                    assetOptions.map { (id, label) -> PixelOption(label, "bankCard") },
+                selected = if (assetSel.isEmpty()) "不使用" else (assetOptions.firstOrNull { it.first == assetSel }?.second ?: "不使用"),
+                onSelect = { s ->
+                    if (s == "不使用") onAsset("")
+                    else assetOptions.firstOrNull { it.second == s }?.let { onAsset(it.first) }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                width = 150.dp,
+            )
+        }
     }
 }
 
@@ -834,11 +1063,15 @@ fun EntryScreen(
     val inList = dayTxs.filter { it.dir == TxDir.IN }
     val outList = dayTxs.filter { it.dir == TxDir.OUT }
     val weather = remember(tick, curDate) { store.weather(ledgerId, curDate) ?: Weather.SUNNY }
-    // 全局类表（设置中可维护）
-    val inCats = remember(tick) { store.incomeCats() }
-    val outCats = remember(tick) { store.expenseCats() }
+    // 账户维度：类别表 + 资产账户（设置中可维护）
+    val accountId = remember { store.ledger(ledgerId)?.accountId ?: "" }
+    val inCats = remember(tick, accountId) { store.incomeCats(accountId) }
+    val outCats = remember(tick, accountId) { store.expenseCats(accountId) }
+    val assetOptions: List<Pair<String, String>> = remember(tick, accountId) {
+        if (accountId.isEmpty()) emptyList() else store.assetsOf(accountId).map { it.id to it.fullLabel() }
+    }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().imePadding()) {
         PixelHeader(title = "记一笔", onBack = onBack)
 
         Column(
@@ -908,6 +1141,9 @@ fun EntryScreen(
                     name = inState.name, onName = { inState.name = it },
                     note = inState.note, onNote = { inState.note = it },
                     cats = inCats,
+                    assetOptions = assetOptions,
+                    assetSel = inState.asset,
+                    onAsset = { inState.asset = it },
                 )
             } else {
                 PxText("支出录入", size = 12.sp, color = Px.GrayText)
@@ -921,6 +1157,9 @@ fun EntryScreen(
                     name = outState.name, onName = { outState.name = it },
                     note = outState.note, onNote = { outState.note = it },
                     cats = outCats,
+                    assetOptions = assetOptions,
+                    assetSel = outState.asset,
+                    onAsset = { outState.asset = it },
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -946,11 +1185,18 @@ fun EntryScreen(
                             PxText(t.time, size = 10.sp, color = Px.GrayText)
                         }
                         PxText(
-                            if (t.dir == TxDir.IN) "+${Fmt.yen(t.amount)}" else "-${Fmt.yen(t.amount)}",
+                            Fmt.yen(t.amount),   // 收支分页展示，金额不带正负号
                             size = 12.sp,
                             color = if (t.dir == TxDir.IN) Px.GrassDark else Px.WoodDark,
                         )
                         Spacer(Modifier.width(6.dp))
+                        // 编辑（铅笔）在删除（垃圾桶）左侧
+                        PixelIconButton(
+                            icon = "pencil", size = 26.dp, bg = Px.CreamDark,
+                            onClick = { editingTx = t },
+                            desc = "编辑",
+                        )
+                        Spacer(Modifier.width(4.dp))
                         PixelIconButton(
                             icon = "trash", size = 26.dp, bg = Px.CreamDark,
                             onClick = {
@@ -1021,10 +1267,13 @@ private fun saveEntry(store: Store, ledgerId: String, date: LocalDate, st: Entry
         if (c.isEmpty()) { store.toast("请输入自定义类别"); return false }
         c
     } else st.cat
-    // 新类别自动加入全局类表（之后所有账本下拉可直接选）
-    val cats = if (st.isIn) store.incomeCats() else store.expenseCats()
-    if (finalCat !in cats) {
-        if (st.isIn) store.addIncomeCat(finalCat) else store.addExpenseCat(finalCat)
+    // 新类别自动加入账户类别表（之后所有账本下拉可直接选）
+    val accountId = store.ledger(ledgerId)?.accountId ?: ""
+    if (accountId.isNotEmpty()) {
+        val cats = if (st.isIn) store.incomeCats(accountId) else store.expenseCats(accountId)
+        if (finalCat !in cats) {
+            if (st.isIn) store.addIncomeCat(accountId, finalCat) else store.addExpenseCat(accountId, finalCat)
+        }
     }
     store.addTx(
         Tx(
@@ -1032,6 +1281,7 @@ private fun saveEntry(store: Store, ledgerId: String, date: LocalDate, st: Entry
             ledgerId = ledgerId, date = date, time = timeOk,
             dir = if (st.isIn) TxDir.IN else TxDir.OUT,
             category = finalCat, amount = v, name = st.name.trim(), note = st.note.trim(),
+            asset = st.asset,
         )
     )
     return true
@@ -1046,6 +1296,7 @@ class EntryFormState(val isIn: Boolean) {
     var amount by mutableStateOf("")
     var name by mutableStateOf("")
     var note by mutableStateOf("")
+    var asset by mutableStateOf("")
 }
 
 @Composable

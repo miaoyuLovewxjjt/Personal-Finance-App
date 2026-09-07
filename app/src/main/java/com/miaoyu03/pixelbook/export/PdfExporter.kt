@@ -1,4 +1,4 @@
-package com.miaoyu03.pixelbook.export
+﻿package com.miaoyu03.pixelbook.export
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -38,7 +38,7 @@ import kotlin.math.sin
  * 布局与 App 对齐：卡片式区块 + 宽松行距，块整体不跨页（杜绝文字挤压/骑标题）。
  * 章节结构（同 App 左侧导航的年 → 月 → 日分级）：
  *   一、账本信息
- *   二、存款明细
+ *   二、我的存款
  *   三、收支明细
  *       {2026年}
  *           {2026年9月}
@@ -67,7 +67,9 @@ object PdfExporter {
         val typeface = fontOf(context, ledger.font)   // 跟随账本设置的字体
         val eng = Engine(doc, typeface)
         val txs = store.txList(ledger.id)
-        val deps = store.depList(ledger.id)
+        // 存款为账户级公用：导出该账本所属账户的全部公用存款
+        val deps = ledger.accountId.takeIf { it.isNotBlank() }
+            ?.let { store.accountDepList(it) } ?: emptyList()
         try {
             coverAndInfo(eng, ledger, txs, deps)
             deposits(eng, deps)
@@ -148,7 +150,7 @@ object PdfExporter {
         // 章节目录：行自动换行（最多 2 行），面板高度按内容自适应
         val tocLines = listOf(
             Pair("ledger", "一、账本信息"),
-            Pair("chest", "二、存款明细"),
+            Pair("chest", "二、我的存款"),
             Pair("expense", "三、收支明细（按 年 → 月 → 日 分级，含日/月/年度各级总结）"),
         )
         val tocY = infoY + infoH + 24f
@@ -188,12 +190,12 @@ object PdfExporter {
         eng.txt.draw(c, text, M + 42f, y, F_BODY, Px.Brown.toArgb())
     }
 
-    /* ================= 二、存款明细（卡片式列表） ================= */
+    /* ================= 二、我的存款（卡片式列表） ================= */
 
     private fun deposits(eng: Engine, deps: List<Deposit>) {
         eng.newSection()
         eng.ensure(60f)
-        chapterHeader(eng, "二、存款明细", "共 ${deps.size} 笔")
+        chapterHeader(eng, "二、我的存款", "共 ${deps.size} 笔")
         val c = eng.c!!
 
         val sorted = deps.sortedWith(
@@ -257,7 +259,7 @@ object PdfExporter {
                     for (t in rows) {
                         txRow(eng, t)
                     }
-                    daySummary(eng, date, dList)
+                    daySummary(eng, store, ledger.id, date, dList)
                 }
                 monthSummary(eng, ym, mList)
                 // 月图表：收入/花销占比环形图（同 App 月度总结页）
@@ -362,17 +364,25 @@ object PdfExporter {
         eng.y = y + 36f + 6f
     }
 
-    /** 日总结：全宽卡片（鲜明标题 + 宽行距），紧跟当日明细 */
-    private fun daySummary(eng: Engine, date: LocalDate, dList: List<Tx>) {
+    /**
+     * 日总结：全宽卡片（鲜明标题 + 宽行距），紧跟当日明细。
+     * 与 App「今日总结」同步：当日设置了花销预算时，额外打印
+     * 「今日花销预算 / 花销超出（未超支）」两行（卡片随之加高）。
+     */
+    private fun daySummary(eng: Engine, store: Store, ledgerId: String, date: LocalDate, dList: List<Tx>) {
         val inSum = inSumOf(dList)
         val outSum = outSumOf(dList)
         val maxIn = dList.filter { it.dir == TxDir.IN }.maxByOrNull { it.amount }
         val maxOut = dList.filter { it.dir == TxDir.OUT }.maxByOrNull { it.amount }
+        val budget = store.dailyBudget(ledgerId, date)          // 分；null = 当天未设置
+        val over = if (budget != null) outSum - budget else 0L
+        val withBudget = budget != null
+        val panelH = if (withBudget) 214f else 170f
 
-        eng.ensure(176f)
+        eng.ensure(panelH + 6f)
         val y = eng.y
         val c = eng.c!!
-        panel(c, M, y, W, 170f, Px.Cream.toArgb())
+        panel(c, M, y, W, panelH, Px.Cream.toArgb())
         eng.txt.draw(c, "日总结", M + 16f, y + 14f, 11f, Px.GrayText.toArgb())
         statLine(c, eng, "总收入", Fmt.money(inSum), Px.GrassDark.toArgb(), M + 16f, y + 40f, 160f)
         statLine(c, eng, "总支出", Fmt.money(outSum), Px.WoodDark.toArgb(), M + 186f, y + 40f, 160f)
@@ -381,9 +391,24 @@ object PdfExporter {
             if (inSum - outSum >= 0) Px.GrassDark.toArgb() else Px.ClayDark.toArgb(),
             M + 356f, y + 40f, 135f,
         )
-        maxLine(c, eng, "最大收入", maxIn, Px.GrassDark.toArgb(), M + 16f, y + 66f, 270f)
-        maxLine(c, eng, "最大花销", maxOut, Px.WoodDark.toArgb(), M + 16f, y + 112f, 270f)
-        eng.y = y + 170f + 14f
+        if (withBudget) {
+            // 预算两行（与 App 今日总结一致）：预算额 + 超出额/未超支
+            statLine(c, eng, "今日花销预算", Fmt.money(budget!!), Px.WoodDark.toArgb(), M + 16f, y + 70f, 175f)
+            statLine(
+                c, eng, "花销超出",
+                if (over > 0) Fmt.money(over) else "未超支",
+                if (over > 0) Px.ClayDark.toArgb() else Px.GrassDark.toArgb(),
+                M + 205f, y + 70f, 175f,
+            )
+            // 分隔细线
+            fillRect(c, M + 12f, y + 100f, W - 24f, 1.5f, Px.CreamDark.toArgb())
+            maxLine(c, eng, "最大收入", maxIn, Px.GrassDark.toArgb(), M + 16f, y + 126f, 270f)
+            maxLine(c, eng, "最大花销", maxOut, Px.WoodDark.toArgb(), M + 16f, y + 172f, 270f)
+        } else {
+            maxLine(c, eng, "最大收入", maxIn, Px.GrassDark.toArgb(), M + 16f, y + 66f, 270f)
+            maxLine(c, eng, "最大花销", maxOut, Px.WoodDark.toArgb(), M + 16f, y + 112f, 270f)
+        }
+        eng.y = y + panelH + 14f
     }
 
     /** 月总结：醒目标题条 + 数据卡，紧跟最后一日的日总结 */

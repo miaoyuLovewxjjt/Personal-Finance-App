@@ -22,7 +22,8 @@ import com.miaoyu03.pixelbook.ui.LedgerFonts
 import com.miaoyu03.pixelbook.ui.LocalLedgerFont
 import com.miaoyu03.pixelbook.ui.Px
 import com.miaoyu03.pixelbook.ui.creamTexture
-import com.miaoyu03.pixelbook.ui.screens.DepositsScreen
+import com.miaoyu03.pixelbook.ui.screens.AccountDepositsScreen
+import com.miaoyu03.pixelbook.ui.screens.AssetsScreen
 import com.miaoyu03.pixelbook.ui.screens.DetailScreen
 import com.miaoyu03.pixelbook.ui.screens.EntryScreen
 import com.miaoyu03.pixelbook.ui.screens.HomeScreen
@@ -33,7 +34,8 @@ import java.time.LocalDate
 /** 页面路由：单 Activity + 状态栈 */
 sealed class Screen {
     data object Home : Screen()
-    data class Deposits(val ledgerId: String) : Screen()
+    data class AccountDeposits(val accountId: String) : Screen()   // 账户公用存款
+    data class Assets(val accountId: String) : Screen()            // 资产账户信息维护
     data class Detail(val ledgerId: String) : Screen()
     data class Entry(val ledgerId: String, val date: LocalDate) : Screen()
     data class Month(val ledgerId: String, val ym: String) : Screen()
@@ -76,14 +78,19 @@ fun PixelBookApp() {
             is Screen.Home -> HomeScreen(
                 store = store,
                 onOpenLedger = { stack.add(Screen.Detail(it)) },
+                onOpenAccountDeposits = { stack.add(Screen.AccountDeposits(it)) },
+                onOpenAssets = { stack.add(Screen.Assets(it)) },
             )
-            is Screen.Deposits -> WithLedgerFont(store, top.ledgerId) {
-                DepositsScreen(
-                    store = store,
-                    ledgerId = top.ledgerId,
-                    onBack = { stack.removeAt(stack.lastIndex) },
-                )
-            }
+            is Screen.AccountDeposits -> AccountDepositsScreen(
+                store = store,
+                accountId = top.accountId,
+                onBack = { stack.removeAt(stack.lastIndex) },
+            )
+            is Screen.Assets -> AssetsScreen(
+                store = store,
+                accountId = top.accountId,
+                onBack = { stack.removeAt(stack.lastIndex) },
+            )
             is Screen.Detail -> WithLedgerFont(store, top.ledgerId) {
                 DetailScreen(
                     store = store,
@@ -91,7 +98,6 @@ fun PixelBookApp() {
                     onBack = { stack.removeAt(stack.lastIndex) },
                     // +：新增所选日期的那一天（进入记一笔页，默认=左侧选中的日期）
                     onAdd = { d -> stack.add(Screen.Entry(top.ledgerId, d)) },
-                    onDeposits = { stack.add(Screen.Deposits(top.ledgerId)) },
                     // 点击月份/年份标题 → 直接跳对应总结页
                     onMonth = { ym -> stack.add(Screen.Month(top.ledgerId, ym)) },
                     onYear = { y -> stack.add(Screen.Year(top.ledgerId, y)) },
