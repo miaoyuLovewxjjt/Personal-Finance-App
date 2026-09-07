@@ -1,4 +1,4 @@
-﻿package com.miaoyu03.pixelbook.ui.screens
+package com.miaoyu03.pixelbook.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -77,6 +77,7 @@ import java.time.LocalDate
 @Composable
 fun HomeScreen(
     store: Store,
+    onBack: () -> Unit,              // 返回启动首页
     onOpenLedger: (String) -> Unit,
     onOpenAccountDeposits: (String) -> Unit,
     onOpenAssets: (String) -> Unit,
@@ -85,11 +86,6 @@ fun HomeScreen(
     var showNewLedger by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Ledger?>(null) }
     var editing by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Ledger?>(null) }
-    var showSettings by remember { mutableStateOf(false) }
-    var accountPicker by remember { mutableStateOf(false) }
-    var editingAccount by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Account?>(null) }
-    var addingAccount by remember { mutableStateOf(false) }
-    var deletingAccount by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Account?>(null) }
 
     val accounts = remember(tick) { store.accounts() }
     val curId = remember(tick) { store.currentAccountId() }
@@ -98,123 +94,94 @@ fun HomeScreen(
         account?.let { store.ledgersOf(it.id) } ?: emptyList()
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            item { Spacer(Modifier.height(14.dp)) }
-            item {
-                PxText("我的记账", size = 24.sp, align = TextAlign.Center)
-            }
-            item { Spacer(Modifier.height(12.dp)) }
-            if (account != null) {
-                // 账户木质卡：标题下方靠左通栏；点按切换账户，右侧可编辑/删除/新建
-                item {
-                    AccountWoodCard(
-                        account = account,
-                        ledgerCount = ledgers.size,
-                        onClick = { accountPicker = true },
-                        onEdit = { editingAccount = account },
-                        onDelete = { deletingAccount = account },
-                        onAdd = { addingAccount = true },
-                    )
-                }
-                item { Spacer(Modifier.height(14.dp)) }
-                // 功能区（标题格式通栏）
-                item {
-                    SectionLink(
-                        icon = "chest",
-                        title = "我的存款",
-                        sub = "本账户公用的一本存款，不分账本",
-                        onClick = { onOpenAccountDeposits(account.id) },
-                    )
-                }
-                item { Spacer(Modifier.height(10.dp)) }
-                item {
-                    SectionLink(
-                        icon = "bankCard",
-                        title = "我的钱包",
-                        sub = "银行卡 / 支付宝 / 微信等资产账户",
-                        onClick = { onOpenAssets(account.id) },
-                    )
-                }
-                item { Spacer(Modifier.height(18.dp)) }
-                // 记账簿区标题（无图标）
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 22.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PxText("记账簿", size = 16.sp, color = Px.Brown)
-                        Spacer(Modifier.weight(1f))
-                        PxText("${ledgers.size} / ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT}", size = 11.sp, color = Px.GrayText)
-                    }
-                }
-                item { Spacer(Modifier.height(6.dp)) }
-                items(ledgers, key = { it.id }) { ledger ->
-                    LedgerCard(
-                        ledger = ledger,
-                        onClick = { onOpenLedger(ledger.id) },
-                        onEdit = { editing = ledger },
-                        onDelete = { deleting = ledger },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                }
-                if (ledgers.isEmpty()) {
-                    item {
-                        Spacer(Modifier.height(30.dp))
-                        PxText("该账户还没有账本，点击下方按钮新建", size = 13.sp, color = Px.GrayText)
-                    }
-                }
-                item { Spacer(Modifier.height(16.dp)) }
-                item {
-                    PixelButton(
-                        text = if (ledgers.size >= com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT) "已达 60 本账本上限" else "＋ 新建账本",
-                        onClick = { showNewLedger = true },
-                        bg = Px.Yellow,
-                        enabled = ledgers.size < com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT,
-                        modifier = Modifier.width(220.dp),
-                    )
-                }
-            } else {
-                item {
-                    Spacer(Modifier.height(60.dp))
-                    PixelPanel(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        bg = Px.Cream,
-                        contentPadding = 18.dp,
-                    ) {
-                        PxText("还没有账户。新建一个账户，账户下可建立多个账本。", size = 13.sp, color = Px.GrayText)
-                    }
-                }
-                item { Spacer(Modifier.height(20.dp)) }
-                item {
-                    PixelButton(
-                        text = "＋ 新建账户",
-                        onClick = { addingAccount = true },
-                        bg = Px.Yellow,
-                        modifier = Modifier.width(220.dp),
-                    )
-                }
-            }
-            item { Spacer(Modifier.height(28.dp)) }
-        }
-
-        // 右上角：设置按钮（数据存储目录）
-        PixelIconButton(
-            icon = "gear",
-            size = 34.dp,
-            onClick = { showSettings = true },
-            desc = "设置",
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 8.dp, end = 14.dp),
+    Column(modifier = Modifier.fillMaxSize()) {
+        // 顶栏：返回 + 当前账号（账号管理请回首页右上角设置）
+        PixelHeader(
+            title = account?.name ?: "我的记账",
+            onBack = onBack,
         )
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                item { Spacer(Modifier.height(14.dp)) }
+                if (account != null) {
+                    // 功能区（标题格式通栏）
+                    item {
+                        SectionLink(
+                            icon = "chest",
+                            title = "我的存款",
+                            sub = "本账户公用的一本存款，不分账本",
+                            onClick = { onOpenAccountDeposits(account.id) },
+                        )
+                    }
+                    item { Spacer(Modifier.height(10.dp)) }
+                    item {
+                        SectionLink(
+                            icon = "bankCard",
+                            title = "我的钱包",
+                            sub = "银行卡 / 支付宝 / 微信等资产账户",
+                            onClick = { onOpenAssets(account.id) },
+                        )
+                    }
+                    item { Spacer(Modifier.height(18.dp)) }
+                    // 我的记账区标题（账本列表；与「我的存款/我的钱包」同一级入口样式）
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 22.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            PxText("我的记账", size = 16.sp, color = Px.Brown)
+                            Spacer(Modifier.weight(1f))
+                            PxText("${ledgers.size} / ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT}", size = 11.sp, color = Px.GrayText)
+                        }
+                    }
+                    item { Spacer(Modifier.height(6.dp)) }
+                    items(ledgers, key = { it.id }) { ledger ->
+                        LedgerCard(
+                            ledger = ledger,
+                            onClick = { onOpenLedger(ledger.id) },
+                            onEdit = { editing = ledger },
+                            onDelete = { deleting = ledger },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    if (ledgers.isEmpty()) {
+                        item {
+                            Spacer(Modifier.height(30.dp))
+                            PxText("该账户还没有账本，点击下方按钮新建", size = 13.sp, color = Px.GrayText)
+                        }
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
+                    item {
+                        PixelButton(
+                            text = if (ledgers.size >= com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT) "已达 60 本账本上限" else "＋ 新建账本",
+                            onClick = { showNewLedger = true },
+                            bg = Px.Yellow,
+                            enabled = ledgers.size < com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT,
+                            modifier = Modifier.width(220.dp),
+                        )
+                    }
+                } else {
+                    item {
+                        Spacer(Modifier.height(60.dp))
+                        PixelPanel(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp),
+                            bg = Px.Cream,
+                            contentPadding = 18.dp,
+                        ) {
+                            PxText("还没有账户。请回到首页新建一个账户，账户下可建立多个账本。", size = 13.sp, color = Px.GrayText)
+                        }
+                    }
+                }
+                item { Spacer(Modifier.height(28.dp)) }
+            }
+        }
     }
 
     // 新建账本（当前账户下）
@@ -245,81 +212,6 @@ fun HomeScreen(
             ledger = ledger,
             onDismiss = { editing = null },
             onSaved = { editing = null; tick++ },
-        )
-    }
-    // 账户操作
-    if (accountPicker) {
-        PixelDialog(title = "切换账户", onDismiss = { accountPicker = false }) {
-            accounts.forEach { a ->
-                val isCur = a.id == account?.id
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(if (isCur) Px.Grass.copy(alpha = 0.35f) else Color.Transparent)
-                        .clickable {
-                            store.setCurrentAccountId(a.id)
-                            accountPicker = false
-                            tick++
-                        }
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PixelIcon("idcard", size = 20.dp)
-                    Spacer(Modifier.width(8.dp))
-                    PxText(a.name, size = 14.sp, color = if (isCur) Px.GrassDark else Px.Brown, modifier = Modifier.weight(1f))
-                    if (isCur) PixelTag("当前", bg = Px.Grass, textColor = Px.Cream)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            PixelButton(
-                text = "＋ 新建账户",
-                onClick = { accountPicker = false; addingAccount = true },
-                bg = Px.Yellow, height = 40.dp,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-    if (addingAccount) {
-        AccountNameDialog(
-            title = "新建账户",
-            initial = "",
-            hint = "账户名（不可与已有账户同名）",
-            onSave = { nm -> store.addAccount(nm) != null },
-            onDismiss = { addingAccount = false },
-            onSaved = { addingAccount = false; tick++ },
-            dupHint = { store.toast("账户名无效或已存在") },
-        )
-    }
-    editingAccount?.let { a ->
-        AccountNameDialog(
-            title = "编辑账户",
-            initial = a.name,
-            hint = "修改账户名将自动同步重命名数据文件夹",
-            onSave = { nm -> store.renameAccount(a.id, nm) },
-            onDismiss = { editingAccount = null },
-            onSaved = { editingAccount = null; tick++ },
-            dupHint = { store.toast("账户名无效或已存在") },
-        )
-    }
-    deletingAccount?.let { a ->
-        PixelConfirm(
-            title = "删除账户",
-            message = "将删除账户「${a.name}」及其数据文件夹，内含全部账本、流水与资产信息，无法恢复。确定删除吗？",
-            confirmText = "删除",
-            onConfirm = {
-                store.deleteAccount(a.id)
-                deletingAccount = null
-                tick++
-            },
-            onDismiss = { deletingAccount = null },
-        )
-    }
-    if (showSettings) {
-        SettingsDialog(
-            store = store,
-            accountId = account?.id ?: "",
-            onDismiss = { showSettings = false },
-            onStorageChanged = { showSettings = false; tick++ },
         )
     }
 }
@@ -388,9 +280,9 @@ private fun SectionLink(icon: String, title: String, sub: String, onClick: () ->
     }
 }
 
-/** 账户新建 / 编辑输入弹窗（同名不允许，长度 ≤30） */
+/** 账户新建 / 编辑输入弹窗（同名不允许，长度 ≤30）。供新首页与账户管理共用。 */
 @Composable
-private fun AccountNameDialog(
+fun AccountNameDialog(
     title: String,
     initial: String,
     hint: String,
@@ -593,7 +485,7 @@ fun AccountDepositsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    PixelIcon("coinPile", size = 30.dp)
+                    PixelIcon("chest", size = 30.dp)
                     Spacer(Modifier.width(8.dp))
                     PxText(
                         if (hideAmount) "总存款 ¥****" else "总存款 ${Fmt.yen(total)}",
@@ -615,7 +507,7 @@ fun AccountDepositsScreen(
         LazyColumn(modifier = Modifier.weight(1f)) {
             DepositGroup(
                 title = "金钱类",
-                icon = "coinPile",
+                icon = "bills",
                 list = money,
                 hideAmount = hideAmount,
                 onEdit = { editing = it },
@@ -716,14 +608,10 @@ private fun AccountDepositFormDialog(
                 bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
             )
         },
+        contentScrollable = true,
     ) {
-        // 表单体可滚动：软键盘弹出后仍能查看/点选下方字段
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .heightIn(max = 430.dp),
-        ) {
+        // 表单体由 PixelDialog 提供弹性滚动：软键盘弹出后仍能查看/点选下方字段
+        Column(modifier = Modifier.fillMaxWidth()) {
             // 入库时间
             PxText("入库时间", size = 12.sp, color = Px.GrayText)
             Spacer(Modifier.height(4.dp))
@@ -753,7 +641,7 @@ private fun AccountDepositFormDialog(
             PixelDropdown(
                 label = "类型",
                 options = listOf(
-                    PixelOption("金钱类", "coinPile"),
+                    PixelOption("金钱类", "bills"),
                     PixelOption("非金钱类", "gift"),
                 ),
                 selected = kind.label,
@@ -1027,18 +915,68 @@ fun SettingsDialog(
     var pendingSwitch by remember { mutableStateOf<Uri?>(null) }   // 待确认的目标目录
     var pendingRestore by remember { mutableStateOf(false) }       // 待确认的恢复内部存储
 
+    // 账号管理（新增/编辑/删除）
+    var tickAcc by remember { mutableIntStateOf(0) }
+    var addingAcc by remember { mutableStateOf(false) }
+    var editingAcc by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Account?>(null) }
+    var deletingAcc by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Account?>(null) }
+    val accs = remember(tickAcc) { store.accountsByRecent() }
+    val curAcc = remember(tickAcc, accs) { store.currentAccountId() }
+
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val treeLauncher = rememberLauncherForActivityResult(OpenTreeContract()) { uri ->
-        if (uri != null) pendingSwitch = uri
+        if (uri != null) {
+            // 关键：SAF 授权必须显式 takePersistableUriPermission 才能跨重启持有。
+            // 否则只是本次进程/会话有效，重启后 storage_tree 指向的目录失去访问权，
+            // 启动时读不到 my_account.json → 误显示「没有账户/账本」（数据其实还在目录里）。
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }
+            pendingSwitch = uri
+        }
     }
 
     PixelDialog(
         title = "设置",
         onDismiss = onDismiss,
+        contentScrollable = true,
         footer = {
             PixelButton("完成", onDismiss, bg = Px.Clay, height = 40.dp, modifier = Modifier.width(140.dp))
         },
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // ---------- 账号管理（新首页右上角设置进入） ----------
+            PxText("账号管理", size = 14.sp)
+            Spacer(Modifier.height(6.dp))
+            accs.forEach { a ->
+                val isCur = a.id == curAcc
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isCur) Px.Grass.copy(alpha = 0.25f) else Color.Transparent)
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PixelIcon("idcard", size = 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    PxText(a.name, size = 13.sp, color = Px.Brown, modifier = Modifier.weight(1f), maxLines = 1)
+                    if (isCur) PixelTag("当前", bg = Px.Grass, textColor = Px.Cream)
+                    Spacer(Modifier.width(6.dp))
+                    PixelIconButton(icon = "pencil", size = 24.dp, onClick = { editingAcc = a }, desc = "编辑")
+                    Spacer(Modifier.width(2.dp))
+                    PixelIconButton(icon = "trash", size = 24.dp, onClick = { deletingAcc = a }, desc = "删除")
+                }
+            }
+            PixelButton(
+                "＋ 新建账户",
+                onClick = { addingAcc = true },
+                bg = Px.Yellow, height = 36.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
             PxText("数据存储", size = 14.sp)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1116,13 +1054,22 @@ fun SettingsDialog(
     pendingSwitch?.let { uri ->
         PixelConfirm(
             title = "切换存储目录",
-            message = "确定把数据存储切换到所选目录吗？现有数据将自动迁移，迁移完成后自动生效。",
+            message = "确定把数据存储切换到所选目录吗？现有数据将自动迁移（数据较多时需等待几秒），迁移完成后自动生效。",
             confirmText = "切换",
             onConfirm = {
-                val r = store.switchStorage(uri)
-                // 成功时附带绝对路径，便于确认真实生效目录
-                store.toast(if (r.startsWith("ok:")) "$r\n路径：${store.storagePath()}" else r)
-                onStorageChanged()
+                pendingSwitch = null
+                // 整树拷贝 + 旧数据整理都在后台执行，避免主线程卡死被系统判 ANR（表现为闪退）
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    store.toast("正在迁移数据，请稍候…")
+                }
+                Thread {
+                    val r = store.switchStorage(uri)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        // 成功时附带绝对路径，便于确认真实生效目录
+                        store.toast(if (r.startsWith("ok:")) "$r\n路径：${store.storagePath()}" else r)
+                        onStorageChanged()
+                    }
+                }.start()
             },
             onDismiss = { pendingSwitch = null },
         )
@@ -1130,14 +1077,64 @@ fun SettingsDialog(
     if (pendingRestore) {
         PixelConfirm(
             title = "恢复内部存储",
-            message = "确定把数据存储恢复到应用内部吗？现有数据将自动迁移。",
+            message = "确定把数据存储恢复到应用内部吗？现有数据将自动迁移（数据较多时需等待几秒）。",
             confirmText = "恢复",
             onConfirm = {
-                val r = store.switchStorage(null)
-                store.toast(if (r.startsWith("ok:")) "$r\n路径：${store.storagePath()}" else r)
-                onStorageChanged()
+                pendingRestore = false
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    store.toast("正在迁移数据，请稍候…")
+                }
+                Thread {
+                    val r = store.switchStorage(null)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        store.toast(if (r.startsWith("ok:")) "$r\n路径：${store.storagePath()}" else r)
+                        onStorageChanged()
+                    }
+                }.start()
             },
             onDismiss = { pendingRestore = false },
+        )
+    }
+    // 账号管理弹窗
+    if (addingAcc) {
+        AccountNameDialog(
+            title = "新建账户",
+            initial = "",
+            hint = "账户名（不可与已有账户同名）",
+            onSave = { nm -> store.addAccount(nm) != null },
+            onDismiss = { addingAcc = false },
+            onSaved = { addingAcc = false; tickAcc++; onStorageChanged() },
+            dupHint = { store.toast("账户名无效或已存在") },
+        )
+    }
+    editingAcc?.let { a ->
+        AccountNameDialog(
+            title = "编辑账户",
+            initial = a.name,
+            hint = "修改账户名将自动同步重命名数据文件夹",
+            onSave = { nm -> store.renameAccount(a.id, nm) },
+            onDismiss = { editingAcc = null },
+            onSaved = { editingAcc = null; tickAcc++ },
+            dupHint = { store.toast("账户名无效或已存在") },
+        )
+    }
+    deletingAcc?.let { a ->
+        PixelConfirm(
+            title = "删除账户",
+            message = "删除账户「${a.name}」将同时删除其下全部账本与数据，无法恢复。确定删除吗？",
+            confirmText = "删除",
+            onConfirm = {
+                val ok = store.deleteAccount(a.id)
+                if (ok) {
+                    // 若删的是当前账户，切到剩余第一个（若有）
+                    if (store.currentAccountId() == null) {
+                        store.accounts().firstOrNull()?.let { store.setCurrentAccountId(it.id) }
+                    }
+                    tickAcc++
+                    onStorageChanged()
+                } else store.toast("删除失败")
+            },
+            onDismiss = { deletingAcc = null },
         )
     }
 }

@@ -18,11 +18,13 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +34,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
@@ -424,12 +428,18 @@ private fun dropdownTextSize(charLen: Int): TextUnit = when {
 
 /* ---------------- 对话框 ---------------- */
 
+/**
+ * 像素风对话框。面板限高不超出屏幕可视区（含软键盘避让）。
+ * @param contentScrollable 内容超高时是否让 content 区域滚动、footer 固定。
+ *        表单弹窗（内容多 + 需键盘输入）应传 true，并在 content 中不要再包 verticalScroll。
+ */
 @Composable
 fun PixelDialog(
     title: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     footer: (@Composable RowScope.() -> Unit)? = null,
+    contentScrollable: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(
@@ -447,25 +457,38 @@ fun PixelDialog(
             )
             // 面板：置于 scrim 之上；面板区域内点击不会冒泡到 scrim（Compose 命中顶层），无需额外吞手势，
             // 否则会拦截内部滚动（表单/长列表滑动失效）
-            PixelPanel(
-                modifier = modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .widthIn(max = 356.dp)
-                    .heightIn(max = 640.dp),
-                bg = Px.Cream,
-                contentPadding = 14.dp,
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                    ) { PxText(title, size = 15.sp) }
-                    Spacer(Modifier.height(10.dp))
-                    Column { content() }
-                    if (footer != null) {
-                        Spacer(Modifier.height(12.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { footer() }
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val availH = maxHeight - 20.dp
+                PixelPanel(
+                    modifier = modifier
+                        .align(Alignment.Center)
+                        .fillMaxWidth()
+                        .widthIn(max = 356.dp)
+                        .heightIn(max = availH),
+                    bg = Px.Cream,
+                    contentPadding = 14.dp,
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) { PxText(title, size = 15.sp) }
+                        Spacer(Modifier.height(10.dp))
+                        if (contentScrollable) {
+                            // 内容区弹性可滚（超高时滚动），footer 固定在最底部始终可见
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f, fill = false)
+                                    .verticalScroll(rememberScrollState()),
+                            ) { content() }
+                        } else {
+                            Column(modifier = Modifier.fillMaxWidth()) { content() }
+                        }
+                        if (footer != null) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { footer() }
+                        }
                     }
                 }
             }

@@ -17,6 +17,7 @@ data class Account(
     val id: String,
     val name: String,
     val createdAt: String = LocalDate.now().toString(),
+    val updatedAt: Long = 0L,   // 最近编辑/切换时间（epoch millis；0 = 旧数据无记录，按创建时间兜底）
 )
 
 /** 资产账户（银行卡/支付宝/微信…，属于某个账户；最新余额由流水自动计算，不可手改） */

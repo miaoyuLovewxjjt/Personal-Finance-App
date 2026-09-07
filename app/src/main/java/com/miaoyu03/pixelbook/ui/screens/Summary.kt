@@ -1,4 +1,4 @@
-﻿package com.miaoyu03.pixelbook.ui.screens
+package com.miaoyu03.pixelbook.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -403,7 +403,7 @@ fun YearScreen(
                         Spacer(Modifier.weight(1f))
                         PxText("点击进入各月总结", size = 11.sp, color = Px.GrayText)
                         Spacer(Modifier.width(6.dp))
-                        PixelIcon(if (monthsOpen) "chevronD" else "chevronR", size = 12.dp)
+                        PixelIcon(if (monthsOpen) "chevronR" else "chevronD", size = 12.dp)
                     }
                     if (monthsOpen) {
                         Spacer(Modifier.height(10.dp))

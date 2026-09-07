@@ -129,7 +129,6 @@ fun DetailScreen(
     }
     // 当前所选日期当天的花销预算（分，未设置为 null）
     val dailyBudget = remember(tick, selectedDate) { store.dailyBudget(ledgerId, selectedDate) }
-
     // 导出 PDF：SAF 让用户选择保存位置 → IO 线程生成
     val appCtx = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
@@ -159,7 +158,8 @@ fun DetailScreen(
     var expandedMonths by remember(all) {
         mutableStateOf(all.map { Fmt.ymKey(it.date) }.toSet())
     }
-    val dayTxs = remember(tick, selectedDate) { store.txOfDay(ledgerId, selectedDate) }
+    // 当日流水直接从全量列表派生（all 已按 tick 缓存读取，避免 txOfDay 再全量读一次账本文件 → 减少编辑/保存后的卡顿）
+    val dayTxs = remember(all, selectedDate) { all.filter { it.date == selectedDate } }
     val inList = dayTxs.filter { it.dir == TxDir.IN }
     val outList = dayTxs.filter { it.dir == TxDir.OUT }
     val inSum = inList.sumOf { it.amount }
@@ -169,7 +169,7 @@ fun DetailScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         PixelHeader(
             // 标题 = 账本名（居中、长名自动换行；新建/编辑时限制 30 字内）
-            title = ledger?.name ?: "记账簿",
+            title = ledger?.name ?: "我的记账",
             onBack = onBack,
             trailing = {
                 // 存款明细入口已移至「我的记账」账户主页，此处仅保留导出
@@ -591,7 +591,7 @@ private fun BudgetBar(budget: Cents?, onClick: () -> Unit) {
         contentPadding = 8.dp,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PixelIcon("coinPile", size = 18.dp)
+            PixelIcon("coin", size = 18.dp)
             Spacer(Modifier.width(6.dp))
             PxText("今日预算", size = 12.sp, color = Px.Wood)
             Spacer(Modifier.weight(1f))
@@ -733,7 +733,7 @@ private fun NavToggleArrow(expanded: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 4.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        PixelIcon(if (expanded) "chevronD" else "chevronR", size = 15.dp)
+        PixelIcon(if (expanded) "chevronR" else "chevronD", size = 15.dp)
     }
 }
 
@@ -891,34 +891,28 @@ fun TxFormDialog(
                 bg = Px.Clay, height = 40.dp, modifier = Modifier.width(104.dp),
             )
         },
+        contentScrollable = true,
     ) {
-        // 表单体可滚动：软键盘弹出后仍能滚动查看/点选下方字段（含资产账户），边打字边看输入
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .heightIn(max = 420.dp),
-        ) {
-            TxFormFields(
-                isIn = isIn,
-                time = time,
-                onTime = { time = it },
-                cat = cat,
-                onCat = { cat = it },
-                customCat = customCat,
-                onCustomCat = { customCat = it },
-                amount = amountStr,
-                onAmount = { amountStr = it },
-                name = name,
-                onName = { name = it },
-                note = note,
-                onNote = { note = it },
-                cats = cats,
-                assetOptions = assetOptions,
-                assetSel = assetId,
-                onAsset = { assetId = it },
-            )
-        }
+        // 表单体由 PixelDialog 提供弹性滚动：软键盘弹出后仍能滚动查看/点选下方字段（含资产账户），边打字边看输入
+        TxFormFields(
+            isIn = isIn,
+            time = time,
+            onTime = { time = it },
+            cat = cat,
+            onCat = { cat = it },
+            customCat = customCat,
+            onCustomCat = { customCat = it },
+            amount = amountStr,
+            onAmount = { amountStr = it },
+            name = name,
+            onName = { name = it },
+            note = note,
+            onNote = { note = it },
+            cats = cats,
+            assetOptions = assetOptions,
+            assetSel = assetId,
+            onAsset = { assetId = it },
+        )
     }
 
     if (showDelete) {

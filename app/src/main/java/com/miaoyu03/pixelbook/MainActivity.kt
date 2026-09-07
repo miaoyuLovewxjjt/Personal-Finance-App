@@ -28,12 +28,14 @@ import com.miaoyu03.pixelbook.ui.screens.DetailScreen
 import com.miaoyu03.pixelbook.ui.screens.EntryScreen
 import com.miaoyu03.pixelbook.ui.screens.HomeScreen
 import com.miaoyu03.pixelbook.ui.screens.MonthScreen
+import com.miaoyu03.pixelbook.ui.screens.StartScreen
 import com.miaoyu03.pixelbook.ui.screens.YearScreen
 import java.time.LocalDate
 
 /** 页面路由：单 Activity + 状态栈 */
 sealed class Screen {
-    data object Home : Screen()
+    data object Start : Screen()                // 启动首页：四季记账（选账号）
+    data object Home : Screen()                 // 目录页：存款/钱包入口 + 账本列表
     data class AccountDeposits(val accountId: String) : Screen()   // 账户公用存款
     data class Assets(val accountId: String) : Screen()            // 资产账户信息维护
     data class Detail(val ledgerId: String) : Screen()
@@ -61,7 +63,7 @@ fun PixelBookApp() {
     val context = LocalContext.current
     val store = remember { Store(context.applicationContext) }
     // FIXME: seed 后首帧数据同步渲染（无闪烁）
-    val stack = remember { mutableStateListOf<Screen>(Screen.Home) }
+    val stack = remember { mutableStateListOf<Screen>(Screen.Start) }
 
     BackHandler(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
 
@@ -75,8 +77,16 @@ fun PixelBookApp() {
     ) {
         val top = stack.last()
         when (top) {
+            is Screen.Start -> StartScreen(
+                store = store,
+                onStart = { id ->
+                    store.setCurrentAccountId(id)
+                    stack.add(Screen.Home)
+                },
+            )
             is Screen.Home -> HomeScreen(
                 store = store,
+                onBack = { stack.removeAt(stack.lastIndex) },
                 onOpenLedger = { stack.add(Screen.Detail(it)) },
                 onOpenAccountDeposits = { stack.add(Screen.AccountDeposits(it)) },
                 onOpenAssets = { stack.add(Screen.Assets(it)) },
