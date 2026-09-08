@@ -65,7 +65,7 @@ fun StartScreen(
     var showPicker by remember { mutableStateOf(false) }      // 卷轴下拉
     var showSettings by remember { mutableStateOf(false) }    // 右上设置
     var addingAccount by remember { mutableStateOf(false) }
-    var firstRun by remember { mutableStateOf(store.accounts().isEmpty()) }
+    // 首启由 Store.ensureStartupAccount() 兜底：全新安装自动建立「默认账户」，此处无需引导
 
     // 最近账号列表（updated 倒序）
     val accounts = remember(tick) { store.accountsByRecent() }
@@ -167,7 +167,7 @@ fun StartScreen(
             hint = "账户名（不可与已有账户同名）",
             onSave = { nm -> store.addAccount(nm) != null },
             onDismiss = { addingAccount = false },
-            onSaved = { addingAccount = false; firstRun = false; tick++ },
+            onSaved = { addingAccount = false; tick++ },
             dupHint = { store.toast("账户名无效或已存在") },
         )
     }
@@ -179,19 +179,6 @@ fun StartScreen(
             onDismiss = { showSettings = false },
             onStorageChanged = { tick++ },
         )
-    }
-    // 首次启动且无账户 → 引导新建
-    if (firstRun) {
-        PixelDialog(title = "欢迎使用四季记账", onDismiss = { firstRun = false }, footer = {
-            PixelButton("取消", { firstRun = false }, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
-            PixelButton(
-                "新建账户",
-                { firstRun = false; addingAccount = true },
-                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(120.dp),
-            )
-        }) {
-            PxText("还没有账户。先新建一个账户，账户下可建立多个账本，开始你的四季记账吧！", size = 13.sp)
-        }
     }
 }
 

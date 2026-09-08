@@ -16,6 +16,7 @@ import com.miaoyu03.pixelbook.R
 import com.miaoyu03.pixelbook.data.AppMeta
 import com.miaoyu03.pixelbook.data.CATEGORY_OTHERS
 import com.miaoyu03.pixelbook.data.Deposit
+import com.miaoyu03.pixelbook.data.DepositCats
 import com.miaoyu03.pixelbook.data.DepositKind
 import com.miaoyu03.pixelbook.data.Fmt
 import com.miaoyu03.pixelbook.data.Ledger
@@ -105,7 +106,7 @@ object PdfExporter {
             else -> 25f
         }
         eng.txt.draw(c, ledger.name, cx, 216f, titleSize, Px.Brown.toArgb(), Paint.Align.CENTER)
-        eng.txt.draw(c, "像素记账 · 收支报告", cx, 252f, 13f, Px.Wood.toArgb(), Paint.Align.CENTER)
+        eng.txt.draw(c, "四季记账 · 收支报告", cx, 252f, 13f, Px.Wood.toArgb(), Paint.Align.CENTER)
 
         // 账本信息卡
         // 账本信息卡：值自动换行（最多 2 行，不截断），面板高度按内容自适应
@@ -210,8 +211,8 @@ object PdfExporter {
                 eng.ensure(42f)
                 val y = eng.y
                 card(c, M, y, W, 38f, Px.Cream.toArgb())
-                val tagBg = if (d.kind == DepositKind.MONEY) Px.Clay.toArgb() else Px.SkyDark.toArgb()
-                tag(c, eng, M + 34f, y + 18f, d.kind.label, tagBg)
+                val cat = d.category.ifEmpty { if (d.kind == DepositKind.MONEY) DepositCats.CASH else CATEGORY_OTHERS }
+                tag(c, eng, M + 34f, y + 18f, cat, depTagColor(cat))
                 eng.txt.draw(
                     c, Fmt.dateYmd(d.date) + "  " + eng.fit(d.name.ifEmpty { "（未命名）" }, 130f, F_BODY),
                     M + 104f, y + 18f, F_BODY, Px.Brown.toArgb(),
@@ -292,6 +293,15 @@ object PdfExporter {
 
     private fun inSumOf(list: List<Tx>): Long = list.filter { it.dir == TxDir.IN }.sumOf { it.amount }
     private fun outSumOf(list: List<Tx>): Long = list.filter { it.dir == TxDir.OUT }.sumOf { it.amount }
+
+    /** 存款类别标签底色（与 App 存款页一致：现金陶土橘 / 黄金暖黄深 / 股票天蓝深 / 基金木棕深 / 其他灰） */
+    private fun depTagColor(cat: String): Int = when (cat) {
+        DepositCats.CASH -> Px.Clay.toArgb()
+        DepositCats.GOLD -> Px.YellowDark.toArgb()
+        DepositCats.STOCK -> Px.SkyDark.toArgb()
+        DepositCats.FUND -> Px.WoodDark.toArgb()
+        else -> Px.GrayText.toArgb()
+    }
 
     /** 分类汇总（降序，返回 分类→金额 分） */
     private fun catRatio(list: List<Tx>, dir: TxDir): List<Pair<String, Long>> =

@@ -361,6 +361,54 @@ fun PixelTextField(
     }
 }
 
+/* ---------------- 多行输入框（备注/便签等换行文本） ---------------- */
+
+@Composable
+fun PixelMultilineTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    minHeight: Dp = 100.dp,
+    maxLines: Int = 6,
+) {
+    Box(
+        modifier = modifier
+            .heightIn(min = minHeight)
+            .background(Px.Cream)
+            .drawBehind {
+                val stroke = 2.dp.toPx()
+                drawRect(
+                    Px.Brown,
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke)
+                )
+            },
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = false,
+            maxLines = maxLines,
+            textStyle = TextStyle(
+                fontFamily = pixFont(), fontSize = 14.sp, color = Px.Brown,
+                lineHeight = 20.sp,
+            ),
+            cursorBrush = SolidColor(Px.Brown),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+            decorationBox = { inner ->
+                Box(Modifier.fillMaxWidth()) {
+                    if (value.isEmpty()) {
+                        PxText(placeholder, size = 13.sp, color = Px.GrayText)
+                    }
+                    inner()
+                }
+            },
+        )
+    }
+}
+
 /* ---------------- 下拉选择 ---------------- */
 
 data class PixelOption(val name: String, val icon: String? = null, val color: Color = Px.Brown)

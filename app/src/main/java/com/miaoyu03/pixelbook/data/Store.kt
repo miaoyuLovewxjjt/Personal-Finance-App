@@ -65,15 +65,53 @@ class Store(context: Context) {
      */
     private val txCache = HashMap<String, List<Tx>>()
 
+    /**
+     * 高频 IO 缓存——保存/读取链路内存化，避免每次保存全量读+写账本包、反复读账户/类别/资产文件：
+     *  - bundleCache     ledgerId → 账本数据包原始 JSON（txs/天气/预算都出自它）
+     *  - accountRawCache my_account.json 原始 JSON（账户索引）
+     *  - catsRawCache    accountId → my_choice.json 原始 JSON
+     *  - assetsRawCache  accountId → my_payment.json 原始 JSON
+     *  - ledgerByIdCache ledgerId → 账本元信息（避免 saveTxs/readBundle 链路反复全表扫描列目录）
+     * 写入路径同步更新/失效；写失败不污染缓存；切换存储目录/删除后整体失效。
+     */
+    private val bundleCache = HashMap<String, String>()
+    @Volatile private var accountRawCache: String? = null
+    private val catsRawCache = HashMap<String, String>()
+    private val assetsRawCache = HashMap<String, String>()
+    private val boardNoteCache = HashMap<String, String>()
+    private val ledgerByIdCache = HashMap<String, Ledger>()
+
     init {
         io = loadIo()
-        // 兼容整理：只在「尚无 my_account.json（首次初始化/升级后首启）」与「切换存储目录后」执行
+        // 兼容整理：整目录无规范布局（无 my_account.json）时执行迁移；
+        // 已有账户体系时 normalize 内部仍会幂等合并根目录残留的旧裸数据，不会重复/覆盖
         if (io.read(ACCOUNTS_JSON) == null) {
             val summary = normalize(io)
             if (summary.migrated > 0) {
                 runCatching { toast("已整理旧数据：${summary.migrated} 个账本 → ${summary.accounts} 个账户") }
             }
         }
+        // 首启兜底：全新安装（无任何账户）自动建立「默认账户」并设为当前账户，开箱即用；
+        // 老用户迁移后已有账户（含迁移来的默认账户）则保证存在当前账户即可
+        ensureStartupAccount()
+    }
+
+    /**
+     * 首启账户兜底（幂等）：
+     *  - 已有账户（含旧数据迁移来的「默认账户」/ 用户自建账户）→ 只保证 currentAccount 有效；
+     *  - 一个账户都没有（全新安装）→ 自动创建「默认账户」并设为当前账户。
+     */
+    fun ensureStartupAccount(): Account? {
+        val list = accounts()
+        if (list.isEmpty()) {
+            val acc = addAccount(DEFAULT_ACCOUNT_NAME) ?: return null
+            setCurrentAccountId(acc.id)
+            return acc
+        }
+        if (currentAccountId() == null) {
+            setCurrentAccountId(list.first().id)
+        }
+        return account(currentAccountId() ?: "") ?: list.first()
     }
 
     companion object {
@@ -89,6 +127,7 @@ class Store(context: Context) {
         private const val CATS_JSON = "my_choice.json"
         private const val SAVING_JSON = "my_saving.json"
         private const val PAYMENT_JSON = "my_payment.json"
+        private const val BOARD_JSON = "my_board.json"          // 目录页公告板便签（账户级一份）
         private const val LEDGER_FILE_PREFIX = "my_ledger_"
         private const val LEDGER_FILE_SUFFIX = ".json"
         // 旧版/过渡期文件名（normalize 识别、迁移用）
@@ -152,14 +191,16 @@ class Store(context: Context) {
     /** 账户文件夹名（= 账户名清洗后；账户名唯一故文件夹唯一） */
     private fun accountFolder(name: String): String = sanitizeFileName(name)
 
-    /** 读账户索引原始 JSON */
-    private fun readAccountsRaw(): List<JSONObject> =
-        io.read(ACCOUNTS_JSON)?.let { raw ->
+    /** 读账户索引原始 JSON（内存缓存；任何写路径都会失效重读） */
+    private fun readAccountsRaw(): List<JSONObject> {
+        val raw = accountRawCache ?: io.read(ACCOUNTS_JSON)?.also { accountRawCache = it }
+        return raw?.let { r ->
             runCatching {
-                val arr = JSONArray(raw)
+                val arr = JSONArray(r)
                 (0 until arr.length()).map { arr.getJSONObject(it) }
             }.getOrDefault(emptyList())
         } ?: emptyList()
+    }
 
     fun accounts(): List<Account> =
         readAccountsRaw().mapNotNull {
@@ -212,7 +253,10 @@ class Store(context: Context) {
                 changed = true
             } else arr.put(o)
         }
-        if (changed) safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
+        if (changed) {
+            safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
+            accountRawCache = null
+        }
     }
 
     /** 某账本所属账户 */
@@ -249,10 +293,9 @@ class Store(context: Context) {
                 summary.accounts += renameTransitionalLayout(target, oldAccts)
             }
 
-            // 若归一后已有 my_account.json，说明不是「旧版裸数据」，直接结束
-            if (target.read(ACCOUNTS_JSON) != null) return@runCatching
-
-            // ---- 2) 纯旧版数据 → 建默认账户搬入 ----
+            // 已有账户体系时仍可能残留旧裸数据（切换目录到旧布局目录等场景）：
+            // 交给 migrateLegacyIntoDefault 幂等处理——已有「默认账户」则合并进它，
+            // 已有其他账户则新建「默认账户」并存；无旧数据时零成本直接返回。
             migrateLegacyIntoDefault(target, summary)
         }
         // 无论上面做了什么，确保每个账户文件夹都有四个规范文件（缺则占位补空）
@@ -286,6 +329,7 @@ class Store(context: Context) {
         }
         if (accCount > 0) {
             target.write(ACCOUNTS_JSON, arr.toString())
+            accountRawCache = null
             target.removeRaw("${LEGACY_PREFIX}${OLD_ACCOUNTS_JSON}")
             target.removeRaw(OLD_ACCOUNTS_JSON)
         }
@@ -358,10 +402,15 @@ class Store(context: Context) {
         target.removeRaw("$folder/$oldName")
     }
 
-    /** 旧版裸数据（无账户）→ 默认账户 */
+    /**
+     * 旧版裸数据（无账户）→ 搬到「默认账户」；合并式幂等：
+     *  - 目标已有「默认账户」账户 → 旧数据写入其文件夹（类别取并集、存款汇入、账本同名跳过），不重复注册；
+     *  - 目标已有其他账户（如用户自建 xxx）→ 追加注册默认账户，两者并存不合并；
+     *  - 无任何旧数据形态（旧前缀文件 / 非规范 json）→ 零成本返回。
+     */
     private fun migrateLegacyIntoDefault(target: LedgerIO, summary: NormalizeSummary) {
-        val defId = "a${System.currentTimeMillis()}"
-        val folder = accountFolder(DEFAULT_ACCOUNT_NAME)
+        var defId = "a${System.currentTimeMillis()}"
+        var folder = accountFolder(DEFAULT_ACCOUNT_NAME)
         // 旧账本数据源：
         //   a) SharedPreferences（内部存储后端）：ledgers 索引 + ledger.<id> 包 + txs./dps./wx. 老三文件
         //   b) SAF 目录根：pixelbook_ledgers.json / pixelbook_cats.json / pixelbook_ledger.<id> / {账本名}_{时间戳}.json
@@ -445,20 +494,38 @@ class Store(context: Context) {
                 }
         }
 
-        // 没有任何可迁移数据（无账本、无旧类别、根目录也无文件）→ 首次全新安装，不建默认账户，
-        // 由首页引导用户新建账户。否则必须建默认账户并把旧数据搬入。
-        val rootHasFiles = target.listDirRaw("").isNotEmpty()
-        if (legacyLedgers.isEmpty() && catsRaw == null && !rootHasFiles) {
+        // 精确判定「是否有旧式裸数据」：只统计旧前缀 / 非规范命名 json（my_* 规范文件不算），
+        // 避免已有账户体系的目录（含 my_account.json / my_ledger_* 等）被误判为待迁移而重复整理
+        val legacyRootFiles = target.listDirRaw("").filter { fn ->
+            fn.startsWith(LEGACY_PREFIX) ||
+                (fn.endsWith(LEDGER_FILE_SUFFIX) && !fn.startsWith(LEDGER_FILE_PREFIX) && !fn.startsWith("my_"))
+        }
+        if (legacyLedgers.isEmpty() && catsRaw == null && legacyRootFiles.isEmpty()) {
             return
         }
+        // 既有账户体系：已有同名「默认账户」→ 合并进它（不重复建、不覆盖已有数据）；
+        // 已有其他账户（如 xxx）→ 正常追加注册默认账户，两者并存
+        val existingAccs = target.read(ACCOUNTS_JSON)
+            ?.let { raw -> runCatching { JSONArray(raw) }.getOrNull() }
+            ?: JSONArray()
+        val defIdx = (0 until existingAccs.length()).firstOrNull { i ->
+            existingAccs.getJSONObject(i).optString("name") == DEFAULT_ACCOUNT_NAME
+        }
+        defId = if (defIdx != null) existingAccs.getJSONObject(defIdx).optString("id") else "a${System.currentTimeMillis()}"
+        folder = if (defIdx != null) {
+            existingAccs.getJSONObject(defIdx).optString("folder", "").ifBlank { accountFolder(DEFAULT_ACCOUNT_NAME) }
+        } else accountFolder(DEFAULT_ACCOUNT_NAME)
         target.createDir(folder)
-        // 类别：旧 cats → my_choice；没有则写默认内置类别
-        val cats = catsRaw ?: catsJson(IncomeCats.list, ExpenseCats.list)
-        target.writeNamedRaw("$folder/$CATS_JSON", cats)
-        // 存款/钱包占位空文件
-        target.writeNamedRaw("$folder/$SAVING_JSON", "[]")
-        target.writeNamedRaw("$folder/$PAYMENT_JSON", "[]")
-        // 逐账本搬入：文件已规范名（沿用索引里的 file 或推导）
+        // 类别：旧 cats 与已有 my_choice 取并集（不覆盖自定义类别）；无旧 cats 且文件已存在则保留
+        if (target.readNamedRaw("$folder/$CATS_JSON") == null || catsRaw != null) {
+            val existingCats = target.readNamedRaw("$folder/$CATS_JSON")
+            val cats = if (catsRaw != null) mergeCatsJson(existingCats, catsRaw) else catsJson(IncomeCats.list, ExpenseCats.list)
+            target.writeNamedRaw("$folder/$CATS_JSON", cats)
+        }
+        // 存款/钱包占位：仅缺失时补空文件（已有内容绝不覆盖）
+        if (target.readNamedRaw("$folder/$SAVING_JSON") == null) target.writeNamedRaw("$folder/$SAVING_JSON", "[]")
+        if (target.readNamedRaw("$folder/$PAYMENT_JSON") == null) target.writeNamedRaw("$folder/$PAYMENT_JSON", "[]")
+        // 逐账本搬入：文件已规范名（沿用索引里的 file 或推导）；同名已存在则跳过（幂等，不覆盖）
         var ok = 0
         for ((l, body) in legacyLedgers) {
             val full = body ?: continue
@@ -471,14 +538,22 @@ class Store(context: Context) {
             target.writeNamedRaw(path, full)
             ok++
         }
-        // 注册账户（含 folder 与大小占位）
-        val meta = JSONObject().apply {
-            put("id", defId); put("name", DEFAULT_ACCOUNT_NAME)
-            put("created", LocalDate.now().toString()); put("folder", folder); put("size", 0L)
+        // 注册账户（含 folder 与大小占位）：已有同名默认账户 → 保留原索引（xxx 等一并保留）；
+        // 否则追加注册，与既有账户并存
+        if (defIdx == null) {
+            val meta = JSONObject().apply {
+                put("id", defId); put("name", DEFAULT_ACCOUNT_NAME)
+                put("created", LocalDate.now().toString()); put("folder", folder); put("size", 0L)
+            }
+            val arr = JSONArray()
+            for (i in 0 until existingAccs.length()) arr.put(existingAccs.getJSONObject(i))
+            arr.put(meta)
+            target.write(ACCOUNTS_JSON, arr.toString())
+            accountRawCache = null
+            summary.accounts = existingAccs.length() + 1
+        } else {
+            summary.accounts = existingAccs.length()
         }
-        val arr = JSONArray().apply { put(meta) }
-        target.write(ACCOUNTS_JSON, arr.toString())
-        summary.accounts = 1
         summary.migrated = ok
 
         // 数据包内残留旧存款（按账本存）→ 汇入 my_saving.json
@@ -583,6 +658,7 @@ class Store(context: Context) {
                 saving.put(JSONObject().apply {
                     put("id", d.id); put("ld", d.ledgerId); put("date", d.date.toString())
                     put("kind", d.kind.name); put("name", d.name); put("note", note); put("value", d.value)
+                    if (d.category.isNotEmpty()) put("cat", d.category)
                 })
                 added++
             }
@@ -656,6 +732,7 @@ class Store(context: Context) {
             put("id", id); put("name", name); put("created", LocalDate.now().toString()); put("folder", folder); put("size", 0L)
         })
         safeIo { io.write(ACCOUNTS_JSON, JSONArray(arr).toString()) }
+        accountRawCache = null
     }
 
     /**
@@ -677,6 +754,7 @@ class Store(context: Context) {
             } else arr.put(it)
         }
         safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
+        accountRawCache = null
     }
 
     /** 账户占用空间（字节）——直接从 my_account.json 读取 */
@@ -707,6 +785,7 @@ class Store(context: Context) {
             } else arr.put(it)
         }
         safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
+        accountRawCache = null
         return true
     }
 
@@ -718,9 +797,15 @@ class Store(context: Context) {
         io.deleteDir(accountFolder(old.name))
         ledgerMetaCache.remove(id)
         doomed.forEach { txCache.remove(it) }
+        doomed.forEach { bundleCache.remove(it) }
+        ledgerByIdCache.clear()
+        catsRawCache.remove(id)
+        assetsRawCache.remove(id)
+        boardNoteCache.remove(id)
         val arr = JSONArray()
         readAccountsRaw().forEach { if (it.optString("id") != id) arr.put(it) }
         safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
+        accountRawCache = null
         if (cfg.getString(KEY_CUR_ACCOUNT, null) == id) cfg.edit().remove(KEY_CUR_ACCOUNT).apply()
         return true
     }
@@ -757,7 +842,8 @@ class Store(context: Context) {
 
     fun ledgers(): List<Ledger> = accounts().flatMap { ledgersOf(it.id) }
 
-    fun ledger(id: String): Ledger? = ledgers().find { it.id == id }
+    fun ledger(id: String): Ledger? =
+        ledgerByIdCache[id] ?: ledgers().find { it.id == id }?.also { ledgerByIdCache[id] = it }
 
     /** 账本 id → 创建毫秒（时间戳排序/文件名用） */
     private fun idStampMs(id: String): Long = id.substringBefore("_").toLongOrNull() ?: 0L
@@ -774,6 +860,7 @@ class Store(context: Context) {
         if (io.readNamedRaw("$folder/${l.file}") != null) {
             ledgerMetaCache.getOrPut(accountId) { mutableMapOf() }[l.file] = l
         }
+        ledgerByIdCache.clear()
         refreshAccountSize(accountId)
         return l
     }
@@ -796,9 +883,12 @@ class Store(context: Context) {
                             put("name", newName); put("font", font); put("cover", coverColor)
                         }
                     }
-                    safeIo {
-                        io.renameRaw("$folder/$oldFile", "$folder/$newFile")
-                        io.writeNamedRaw("$folder/$newFile", obj.toString())
+                    if (safeIo {
+                            io.renameRaw("$folder/$oldFile", "$folder/$newFile")
+                            io.writeNamedRaw("$folder/$newFile", obj.toString())
+                        }
+                    ) {
+                        bundleCache[id] = obj.toString()
                     }
                 }
             } else if (newFile != oldFile) {
@@ -809,9 +899,12 @@ class Store(context: Context) {
                             put("name", newName); put("font", font); put("cover", coverColor)
                         }
                     }
-                    safeIo {
-                        io.writeNamedRaw("$folder/$newFile", obj.toString())
-                        io.removeRaw("$folder/$oldFile")
+                    if (safeIo {
+                            io.writeNamedRaw("$folder/$newFile", obj.toString())
+                            io.removeRaw("$folder/$oldFile")
+                        }
+                    ) {
+                        bundleCache[id] = obj.toString()
                     }
                 }
             }
@@ -825,11 +918,14 @@ class Store(context: Context) {
                 runCatching {
                     obj.getJSONObject("ledger").apply { put("font", font); put("cover", coverColor) }
                 }
-                safeIo { io.writeNamedRaw("$folder/${old.file}", obj.toString()) }
+                if (safeIo { io.writeNamedRaw("$folder/${old.file}", obj.toString()) }) {
+                    bundleCache[id] = obj.toString()
+                }
             }
             val cache = ledgerMetaCache.getOrPut(accId) { mutableMapOf() }
             cache[old.file] = updated.copy(file = old.file)
         }
+        ledgerByIdCache.clear()
         refreshAccountSize(accId)
     }
 
@@ -841,6 +937,8 @@ class Store(context: Context) {
         safeIo { io.removeRaw("$folder/$f") }
         ledgerMetaCache[accId]?.remove(f)
         txCache.remove(id)
+        bundleCache.remove(id)
+        ledgerByIdCache.clear()
         refreshAccountSize(accId)
     }
 
@@ -848,7 +946,7 @@ class Store(context: Context) {
 
     private fun readCatsObj(accountId: String): JSONObject? {
         val folder = folderOfAccount(accountId) ?: return null
-        val raw = io.readNamedRaw("$folder/$CATS_JSON") ?: return null
+        val raw = catsRawCache[accountId] ?: io.readNamedRaw("$folder/$CATS_JSON")?.also { catsRawCache[accountId] = it } ?: return null
         return runCatching { JSONObject(raw) }.getOrNull()
     }
 
@@ -863,9 +961,33 @@ class Store(context: Context) {
             put("in", JSONArray(income)); put("out", JSONArray(expense))
         }.toString()
 
+    /**
+     * 合并两份 my_choice.json（in/out 类别数组取并集，保留既有自定义类别）。
+     * 任一解析失败时以 incoming 兜底，保证旧类别不丢。
+     */
+    private fun mergeCatsJson(existing: String?, incoming: String): String {
+        val out = JSONObject()
+        for (tag in listOf("in", "out")) {
+            val set = linkedSetOf<String>()
+            fun addFrom(raw: String?) {
+                raw ?: return
+                runCatching { JSONObject(raw) }.getOrNull()?.optJSONArray(tag)?.let { arr ->
+                    for (i in 0 until arr.length()) set.add(arr.getString(i))
+                }
+            }
+            addFrom(existing)
+            addFrom(incoming)
+            out.put(tag, JSONArray(set.toList()))
+        }
+        return out.toString()
+    }
+
     private fun writeCats(accountId: String, obj: JSONObject) {
         val folder = folderOfAccount(accountId) ?: return
-        safeIo { io.writeNamedRaw("$folder/$CATS_JSON", obj.toString()) }
+        val raw = obj.toString()
+        if (safeIo { io.writeNamedRaw("$folder/$CATS_JSON", raw) }) {
+            catsRawCache[accountId] = raw
+        }
     }
 
     fun incomeCats(accountId: String): List<String> = readCatsArr(readCatsObj(accountId), "in", IncomeCats.list)
@@ -880,6 +1002,34 @@ class Store(context: Context) {
             put("out", JSONArray(readCatsArr(null, "out", ExpenseCats.list)))
         })
         return list
+    }
+
+    /* ================= 存款类别（my_choice.json 的 dep 组；默认 现金/黄金/股票/基金/其他） ================= */
+
+    /** 存款类别表（账户一份；未初始化返回默认五类） */
+    fun depCats(accountId: String): List<String> =
+        readCatsArr(readCatsObj(accountId), "dep", DepositCats.list)
+
+    /** 新增存款类别（录入时手动新增，≤10 字由 UI 截断）；已存在视为成功（返回 true） */
+    fun addDepCat(accountId: String, name: String): Boolean {
+        val n = name.trim()
+        if (n.isEmpty() || n == CATEGORY_OTHERS) return false
+        if (n in depCats(accountId)) return true
+        val obj = readCatsObj(accountId)
+        val arr = obj?.optJSONArray("dep")
+        val depList = if (arr != null) (0 until arr.length()).map { arr.getString(it) } else DepositCats.list
+        writeCats(accountId, JSONObject().apply {
+            put("in", obj?.optJSONArray("in") ?: JSONArray(IncomeCats.list))
+            put("out", obj?.optJSONArray("out") ?: JSONArray(ExpenseCats.list))
+            put("dep", JSONArray(depList + n))
+        })
+        return true
+    }
+
+    /** 既有 dep 组（未初始化则默认表）——in/out 类别写入时保护存款类别不丢 */
+    private fun depArrOf(accountId: String): JSONArray {
+        val arr = readCatsObj(accountId)?.optJSONArray("dep")
+        return arr ?: JSONArray(DepositCats.list)
     }
 
     fun addIncomeCat(accountId: String, name: String): Boolean = addCat(accountId, "in", IncomeCats.list, name)
@@ -897,6 +1047,7 @@ class Store(context: Context) {
         writeCats(accountId, JSONObject().apply {
             put("in", JSONArray(if (tag == "in") cur + n else readCatsFor(accountId, "in", IncomeCats.list)))
             put("out", JSONArray(if (tag == "out") cur + n else readCatsFor(accountId, "out", ExpenseCats.list)))
+            put("dep", depArrOf(accountId))
         })
         return true
     }
@@ -909,6 +1060,7 @@ class Store(context: Context) {
         writeCats(accountId, JSONObject().apply {
             put("in", JSONArray(if (tag == "in") renamed else readCatsFor(accountId, "in", IncomeCats.list)))
             put("out", JSONArray(if (tag == "out") renamed else readCatsFor(accountId, "out", ExpenseCats.list)))
+            put("dep", depArrOf(accountId))
         })
         applyCatRename(accountId, dir, old, n)
         return true
@@ -921,6 +1073,7 @@ class Store(context: Context) {
         writeCats(accountId, JSONObject().apply {
             put("in", JSONArray(if (tag == "in") removed else readCatsFor(accountId, "in", IncomeCats.list)))
             put("out", JSONArray(if (tag == "out") removed else readCatsFor(accountId, "out", ExpenseCats.list)))
+            put("dep", depArrOf(accountId))
         })
         applyCatRename(accountId, dir, name, CATEGORY_OTHERS)
         return true
@@ -946,7 +1099,7 @@ class Store(context: Context) {
     fun assetsOf(accountId: String): List<AssetAccount> {
         val f = assetsFile(accountId)
         if (f.isEmpty()) return emptyList()
-        val raw = io.readNamedRaw(f) ?: return emptyList()
+        val raw = assetsRawCache[accountId] ?: io.readNamedRaw(f)?.also { assetsRawCache[accountId] = it } ?: return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i ->
@@ -972,7 +1125,10 @@ class Store(context: Context) {
                 put("id", it.id); put("cat", it.category); put("sub", it.sub); put("role", it.role)
             })
         }
-        safeIo { io.writeNamedRaw(f, arr.toString()) }
+        val raw = arr.toString()
+        if (safeIo { io.writeNamedRaw(f, raw) }) {
+            assetsRawCache[accountId] = raw
+        }
     }
 
     /** 新增/更新资产账户（角色不可重复）；成功返回 true */
@@ -1037,23 +1193,28 @@ class Store(context: Context) {
     private fun readBundle(id: String): JSONObject? {
         val l = ledger(id) ?: return null
         val p = bundleFilePath(l) ?: return null
-        val raw = io.readNamedRaw(p) ?: return null
+        // 内存缓存命中直接解析（无 IO）；未命中读文件并登记
+        val raw = bundleCache[id] ?: io.readNamedRaw(p)?.also { bundleCache[id] = it } ?: return null
         return runCatching { JSONObject(raw) }.getOrNull()
     }
 
     private fun emptyBundleLike(l: Ledger) =
         JSONObject(bundleJson(l, emptyList(), emptyList(), JSONObject(), JSONObject()))
 
-    /** 写账本数据包（重建整个包：txs/dps/wx/bdg 合并写入） */
+    /** 写账本数据包（重建整个包：txs/dps/wx/bdg 合并写入）；写成功才更新内存缓存 */
     private fun writeBundle(l: Ledger, obj: JSONObject) {
         val p = bundleFilePath(l) ?: return
-        safeIo { io.writeNamedRaw(p, obj.toString()) }
+        val raw = obj.toString()
+        if (safeIo { io.writeNamedRaw(p, raw) }) {
+            bundleCache[l.id] = raw
+        }
     }
 
     private fun safeBundleSave(l: Ledger, obj: JSONObject) {
         try {
             val p = bundleFilePath(l) ?: return
             io.writeNamedRaw(p, obj.toString())
+            bundleCache[l.id] = obj.toString()
         } catch (e: Exception) {
             android.util.Log.e("PixelStore", "bundle save failed: ${l.id} -> ${e.message}", e)
             lastWriteError = "${e.message ?: e.javaClass.simpleName}"
@@ -1061,13 +1222,16 @@ class Store(context: Context) {
         }
     }
 
-    private fun safeIo(block: () -> Unit) {
-        try {
+    /** 统一 IO 容错：成功返回 true；失败记录错误并提示，返回 false（调用方据此决定是否信任缓存） */
+    private fun safeIo(block: () -> Unit): Boolean {
+        return try {
             block()
+            true
         } catch (e: Exception) {
             android.util.Log.e("PixelStore", "io failed -> ${e.message}", e)
             lastWriteError = "${e.message ?: e.javaClass.simpleName}"
             runCatching { toast("保存失败：${e.message ?: e.javaClass.simpleName}") }
+            false
         }
     }
 
@@ -1150,6 +1314,25 @@ class Store(context: Context) {
 
     fun deleteAccountDep(accountId: String, depId: String) {
         writeAccountDeps(accountId, accountDepList(accountId).filterNot { it.id == depId })
+    }
+
+    /* ================= 公告板便签（账户级 my_board.json） ================= */
+
+    /** 目录页公告板便签（账户级一份；未设置返回空串） */
+    fun boardNote(accountId: String): String {
+        val folder = folderOfAccount(accountId) ?: return ""
+        val raw = boardNoteCache[accountId] ?: io.readNamedRaw("$folder/$BOARD_JSON")?.also { boardNoteCache[accountId] = it } ?: return ""
+        return runCatching { JSONObject(raw).optString("note", "") }.getOrDefault("")
+    }
+
+    /** 写入公告板便签（≤60 字由 UI 截断）；写成功才更新缓存 */
+    fun setBoardNote(accountId: String, note: String): Boolean {
+        val folder = folderOfAccount(accountId) ?: return false
+        val raw = JSONObject().apply { put("note", note) }.toString()
+        return if (safeIo { io.writeNamedRaw("$folder/$BOARD_JSON", raw) }) {
+            boardNoteCache[accountId] = raw
+            true
+        } else false
     }
 
     /* ================= 天气 / 每日预算（存数据包） ================= */
@@ -1236,6 +1419,7 @@ class Store(context: Context) {
             id = old?.id ?: "d${System.currentTimeMillis()}_${(1000..9999).random()}",
             ledgerId = ledgerId, date = old?.date ?: y.atEndOfMonth(),
             kind = DepositKind.MONEY, name = name, note = "", value = value,
+            category = DepositCats.CASH,
         )
         writeAccountDeps(accId, list)
         return true
@@ -1282,6 +1466,42 @@ class Store(context: Context) {
         if (rest.isBlank()) base else "$base/$rest"
     }.getOrNull()
 
+    /** 合并两份 my_account.json 索引（按 id 去重，目标目录原账户在前、当前树账户在后） */
+    private fun mergeAccountIndexes(aRaw: String?, bRaw: String?): String {
+        val arr = JSONArray()
+        val seen = HashSet<String>()
+        fun addFrom(raw: String?) {
+            raw ?: return
+            runCatching { JSONArray(raw) }.getOrNull()?.let { src ->
+                for (i in 0 until src.length()) {
+                    val o = src.getJSONObject(i)
+                    val id = o.optString("id")
+                    if (id.isNotEmpty() && seen.add(id)) arr.put(o)
+                }
+            }
+        }
+        addFrom(aRaw); addFrom(bRaw)
+        return arr.toString()
+    }
+
+    /** 通用 JSON 数组按 id 去重合并（存款/钱包用：目标在先、当前在后，两边数据都保留） */
+    private fun mergeJsonArrayById(aRaw: String?, bRaw: String?): String {
+        val arr = JSONArray()
+        val seen = HashSet<String>()
+        fun addFrom(raw: String?) {
+            raw ?: return
+            runCatching { JSONArray(raw) }.getOrNull()?.let { src ->
+                for (i in 0 until src.length()) {
+                    val o = src.getJSONObject(i)
+                    val id = o.optString("id")
+                    if (id.isEmpty() || seen.add(id)) arr.put(o)
+                }
+            }
+        }
+        addFrom(aRaw); addFrom(bRaw)
+        return arr.toString()
+    }
+
     /**
      * 切换存储目录：整棵账户树（my_account.json + 各账户文件夹）复制到目标后端，
      * 然后对目标目录执行一次 normalize（若目标仍是旧布局则就地整理为新规范）。
@@ -1296,23 +1516,45 @@ class Store(context: Context) {
             SafLedgerIO(appContext, root)
         }
         return runCatching {
-            // 整树拷贝（含 my_account.json、全部账户文件夹内文件）
+            // 合并式整树拷贝到目标目录（目标可能已有数据，绝不覆盖丢失）：
+            //  - 目标已有同名文件：my_choice / my_saving / my_payment 内容级合并（两边都保留），
+            //    账本数据包等其他文件保留目标（不覆盖）；my_account.json 最后统一合并写
+            //  - 目标没有的文件：原样写入（当前数据完整到达新目录）
             io.listAllRaw().forEach { rel ->
+                if (rel == ACCOUNTS_JSON) return@forEach   // 索引最后统一合并写
                 val content = io.readNamedRaw(rel) ?: return@forEach
-                newIo.writeNamedRaw(rel, content)
+                val targetContent = newIo.readNamedRaw(rel)
+                when {
+                    targetContent == null -> newIo.writeNamedRaw(rel, content)
+                    rel.endsWith("/$CATS_JSON") -> newIo.writeNamedRaw(rel, mergeCatsJson(targetContent, content))
+                    rel.endsWith("/$SAVING_JSON") || rel.endsWith("/$PAYMENT_JSON") ->
+                        newIo.writeNamedRaw(rel, mergeJsonArrayById(targetContent, content))
+                    // 其余同名文件（my_ledger_*.json 等）：保留目标，不覆盖
+                }
             }
+            // 账户索引：目标已有 → 与当前树按 id 合并（目标账户保留、与默认账户等并存）；否则写当前
+            val targetAccRaw = newIo.read(ACCOUNTS_JSON)
+            val curAccRaw = io.read(ACCOUNTS_JSON)
+            newIo.writeNamedRaw(ACCOUNTS_JSON, if (targetAccRaw != null) mergeAccountIndexes(targetAccRaw, curAccRaw) else curAccRaw ?: "[]")
+            accountRawCache = null
             // 生效
             cfg.edit().putString(KEY_STORAGE_TREE, treeUri?.toString()).apply()
             io = newIo
-            // 目标目录若是旧布局（外部目录里有 pixelbook_* / accounts.json / 旧备份 json 等），就地整理
-            if (io.read(ACCOUNTS_JSON) == null) {
-                val summary = normalize(io)
-                if (summary.migrated > 0) {
-                    runCatching { toast("已整理目标目录旧数据：${summary.migrated} 个账本 → ${summary.accounts} 个账户") }
-                }
+            // 目标目录若残留旧布局数据（pixelbook_* / accounts.json / 旧备份 json 等）→ 就地整理合并：
+            // 已有默认账户则并入其文件夹，已有其他账户则两者并存；无旧数据零成本返回
+            val summary = normalize(io)
+            if (summary.migrated > 0) {
+                runCatching { toast("已整理目标目录旧数据：${summary.migrated} 个账本 → ${summary.accounts} 个账户") }
             }
             ledgerMetaCache.clear()
             txCache.clear()
+            // 切换目录后全部内存缓存整体失效（文件路径/内容已变化）
+            bundleCache.clear()
+            ledgerByIdCache.clear()
+            accountRawCache = null
+            catsRawCache.clear()
+            assetsRawCache.clear()
+            boardNoteCache.clear()
             // 记录历史与上次结果
             val prev = cfg.getString(KEY_STORAGE_TREE, null)
             prev?.let {
@@ -1355,6 +1597,7 @@ class Store(context: Context) {
     private fun depToJson(d: Deposit): JSONObject = JSONObject().apply {
         put("id", d.id); put("ld", d.ledgerId); put("date", d.date.toString()); put("kind", d.kind.name)
         put("name", d.name); put("note", d.note); put("value", d.value)
+        if (d.category.isNotEmpty()) put("cat", d.category)
     }
 
     private fun parseLedgers(s: String): List<Ledger> {
@@ -1409,13 +1652,19 @@ class Store(context: Context) {
             val arr = JSONArray(s)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                val kind = if (o.optString("kind", "MONEY") == "MONEY") DepositKind.MONEY else DepositKind.GOODS
+                // 类别兼容：新字段 cat；旧数据按 kind 推导（金钱类→现金，非金钱类→其他）
+                val cat = o.optString("cat", "").ifEmpty {
+                    if (kind == DepositKind.MONEY) DepositCats.CASH else CATEGORY_OTHERS
+                }
                 out.add(
                     Deposit(
                         id = o.getString("id"), ledgerId = o.getString("ld"),
                         date = LocalDate.parse(o.getString("date")),
-                        kind = if (o.optString("kind", "MONEY") == "MONEY") DepositKind.MONEY else DepositKind.GOODS,
+                        kind = kind,
                         name = o.optString("name", ""), note = o.optString("note", ""),
                         value = o.optLong("value", 0),
+                        category = cat,
                     )
                 )
             }

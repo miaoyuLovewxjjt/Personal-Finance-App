@@ -68,14 +68,24 @@ data class Deposit(
     val id: String,
     val ledgerId: String,
     val date: LocalDate,        // 入库时间
-    val kind: DepositKind,      // 金钱类 / 非金钱类
+    val kind: DepositKind,      // 金钱类 / 非金钱类（旧版字段；现金=金钱类，其余=非金钱类）
     val name: String,           // 物品名称
     val note: String,           // 备注
     val value: Cents,           // 价值（分）
+    val category: String = "",  // 存款类别（现金/黄金/股票/基金/其他/自定义；空=按 kind 推导）
 )
 
 enum class DepositKind(val label: String) {
     MONEY("金钱类"), GOODS("非金钱类")
+}
+
+/** 存款默认类别（旧数据兼容：金钱类→现金，非金钱类→其他） */
+object DepositCats {
+    const val CASH = "现金"
+    const val GOLD = "黄金"
+    const val STOCK = "股票"
+    const val FUND = "基金"
+    val list = listOf(CASH, GOLD, STOCK, FUND, CATEGORY_OTHERS)
 }
 
 /** 兜底类别（固定，不可删除/编辑） */
@@ -90,6 +100,7 @@ const val MAX_CAT_LEN = 10                   // 自定义类别：最多 10 个�
 const val MAX_ROLE_LEN = 10                  // 资产账户角色：最多 10 个汉字，不可重复
 const val MAX_ASSET_SUB_LEN = 20             // 资产账户子类别（卡号/账号）：最多 20 字
 const val MAX_ACCOUNT_NAME_LEN = 30          // 账户名：最多 30 字
+const val MAX_BOARD_LEN = 60                 // 目录页公告板便签：最多 60 字（账户级）
 const val MAX_LEDGER_PER_ACCOUNT = 60        // 每个账户下最多账本数
 
 /** 旧数据迁移时创建的默认账户名 */
