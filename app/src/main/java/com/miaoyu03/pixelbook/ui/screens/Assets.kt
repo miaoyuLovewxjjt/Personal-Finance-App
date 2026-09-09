@@ -295,7 +295,7 @@ private fun AssetListPane(
         ) {
             PixelIcon("coinPile", size = 24.dp)
             Spacer(Modifier.width(8.dp))
-            PxText("资产来源", size = 17.sp)
+            PxText("余额一览", size = 17.sp)
             Spacer(Modifier.weight(1f))
             PixelSegSwitch(hidden = hideBal, onToggle = { hideBal = !hideBal })
         }
@@ -352,7 +352,7 @@ private fun AssetListPane(
             contentAlignment = Alignment.Center,
         ) {
             PixelButton(
-                text = "＋ 新增资产",
+                text = "＋ 新增钱包账户",
                 onClick = { showForm = true },
                 bg = Px.Grass,
                 modifier = Modifier.width(200.dp),
@@ -465,7 +465,7 @@ private fun AssetFormDialog(
     fun finalSource(): String = if (source == "自定义") customSource.trim() else source
 
     PixelDialog(
-        title = if (initial == null) "新增资产账户" else "编辑资产账户",
+        title = if (initial == null) "新增钱包账户" else "编辑钱包账户",
         onDismiss = onDismiss,
         footer = {
             PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
