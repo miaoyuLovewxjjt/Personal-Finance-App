@@ -88,11 +88,16 @@ import kotlin.math.sqrt
 /* ---------------- 像素字体 ---------------- */
 
 @Composable
-fun pixFont() = androidx.compose.ui.text.font.FontFamily(
-    androidx.compose.ui.text.font.Font(
-        LocalContext.current.resources.getIdentifier("zpix", "font", LocalContext.current.packageName)
-    )
-)
+fun pixFont(): androidx.compose.ui.text.font.FontFamily {
+    val ctx = LocalContext.current
+    return remember(ctx) {
+        androidx.compose.ui.text.font.FontFamily(
+            androidx.compose.ui.text.font.Font(
+                ctx.resources.getIdentifier("zpix", "font", ctx.packageName)
+            )
+        )
+    }
+}
 
 /**
  * 账本专属字体（CompositionLocal）：
@@ -338,11 +343,13 @@ fun PixelTextField(
             },
     ) {
         // 占满整个输入框区域：点击框内任意空白处都可聚焦/移动光标
+        val fontFam = pixFont()
+        val tfStyle = remember { TextStyle(fontFamily = fontFam, fontSize = 14.sp, color = Px.Brown) }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            textStyle = TextStyle(fontFamily = pixFont(), fontSize = 14.sp, color = Px.Brown),
+            textStyle = tfStyle,
             cursorBrush = SolidColor(Px.Brown),
             keyboardOptions = if (numeric) KeyboardOptions(keyboardType = KeyboardType.Number) else KeyboardOptions.Default,
             modifier = Modifier.fillMaxSize(),

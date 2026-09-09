@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -1052,6 +1053,11 @@ fun EntryScreen(
     val inState = remember { EntryFormState(true) }
     val outState = remember { EntryFormState(false) }
     var editingTx by remember { mutableStateOf<Tx?>(null) }
+    // 切换日期时重置两组表单内容（防止把上一日的金额/名称/备注误记到新日期）
+    LaunchedEffect(curDate) {
+        inState.resetForNewDate()
+        outState.resetForNewDate()
+    }
 
     val dayTxs = remember(tick, curDate) { store.txOfDay(ledgerId, curDate) }
     val inList = dayTxs.filter { it.dir == TxDir.IN }
@@ -1291,6 +1297,15 @@ class EntryFormState(val isIn: Boolean) {
     var name by mutableStateOf("")
     var note by mutableStateOf("")
     var asset by mutableStateOf("")
+
+    /** 切换到另一天时重置内容字段：时间刷新为当前时间、清空金额/名称/备注（类别/资产保留常用选择） */
+    fun resetForNewDate() {
+        val n = java.time.LocalTime.now()
+        time = "%02d:%02d".format(n.hour, n.minute)
+        amount = ""
+        name = ""
+        note = ""
+    }
 }
 
 @Composable

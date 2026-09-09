@@ -35,8 +35,8 @@ import java.time.LocalDate
 /** 页面路由：单 Activity + 状态栈 */
 sealed class Screen {
     data object Start : Screen()                // 启动首页：四季记账（选账号）
-    data object Home : Screen()                 // 目录页：存款/钱包入口 + 账本列表
-    data class AccountDeposits(val accountId: String) : Screen()   // 账户公用存款
+    data object Home : Screen()                 // 目录页：资产/钱包入口 + 账本列表
+    data class AccountDeposits(val accountId: String) : Screen()   // 账户公用资产
     data class Assets(val accountId: String) : Screen()            // 资产账户信息维护
     data class Detail(val ledgerId: String) : Screen()
     data class Entry(val ledgerId: String, val date: LocalDate) : Screen()

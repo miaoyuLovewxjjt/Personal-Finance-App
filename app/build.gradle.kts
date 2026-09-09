@@ -22,6 +22,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // minSdk 24 < API 26：java.time 等需要 core library desugaring，否则 Android 7.x 崩溃
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -31,9 +33,11 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("../keystore/pixelbook.keystore")
-            storePassword = "pixelbook123"
+            // 密码优先取用户级 gradle.properties（~/.gradle/gradle.properties 的 pixelbookStorePassword），
+            // 缺省回退默认值（旧配置兼容；不随仓库公开）
+            storePassword = (findProperty("pixelbookStorePassword") as String?) ?: "pixelbook123"
             keyAlias = "pixelbook"
-            keyPassword = "pixelbook123"
+            keyPassword = (findProperty("pixelbookKeyPassword") as String?) ?: "pixelbook123"
         }
     }
 
@@ -50,6 +54,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

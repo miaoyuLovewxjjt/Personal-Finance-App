@@ -68,7 +68,7 @@ object PdfExporter {
         val typeface = fontOf(context, ledger.font)   // 跟随账本设置的字体
         val eng = Engine(doc, typeface)
         val txs = store.txList(ledger.id)
-        // 存款为账户级公用：导出该账本所属账户的全部公用存款
+        // 资产为账户级公用：导出该账本所属账户的全部公用资产
         val deps = ledger.accountId.takeIf { it.isNotBlank() }
             ?.let { store.accountDepList(it) } ?: emptyList()
         try {
@@ -114,8 +114,8 @@ object PdfExporter {
             Triple("账本名称", ledger.name, false),
             Triple("创建时间", safeDate(ledger.createdAt), false),
             Triple("导出时间", Fmt.date(LocalDate.now()), false),
-            Triple("总存款", Fmt.yen(deps.sumOf { it.value }), true),
-            Triple("存款记录", "${deps.size} 笔", false),
+            Triple("总资产", Fmt.yen(deps.sumOf { it.value }), true),
+            Triple("资产记录", "${deps.size} 笔", false),
             Triple("收支记录", "收入 ${txs.count { it.dir == TxDir.IN }} 笔 · 支出 ${txs.count { it.dir == TxDir.OUT }} 笔", false),
         )
         val infoY = 306f
@@ -204,10 +204,10 @@ object PdfExporter {
                 .thenByDescending { it.date }
         )
         if (sorted.isEmpty()) {
-            emptyNote(c, eng, "暂无存款记录")
+            emptyNote(c, eng, "暂无资产记录")
         } else {
             for (d in sorted) {
-                // 每张存款卡片整体一行，不跨页
+                // 每张资产卡片整体一行，不跨页
                 eng.ensure(42f)
                 val y = eng.y
                 card(c, M, y, W, 38f, Px.Cream.toArgb())
@@ -226,7 +226,7 @@ object PdfExporter {
         eng.ensure(40f)
         val y = eng.y
         fillRect(c, M, y, W, 34f, Px.Wood.toArgb())
-        eng.txt.draw(c, "合计 · 总存款", M + 14f, y + 17f, F_BODY, Px.Cream.toArgb())
+        eng.txt.draw(c, "合计 · 总资产", M + 14f, y + 17f, F_BODY, Px.Cream.toArgb())
         eng.txt.draw(
             c, Fmt.yen(deps.sumOf { it.value }), M + W - 14f, y + 17f, F_BODY,
             Px.Cream.toArgb(), Paint.Align.RIGHT,
@@ -294,7 +294,7 @@ object PdfExporter {
     private fun inSumOf(list: List<Tx>): Long = list.filter { it.dir == TxDir.IN }.sumOf { it.amount }
     private fun outSumOf(list: List<Tx>): Long = list.filter { it.dir == TxDir.OUT }.sumOf { it.amount }
 
-    /** 存款类别标签底色（与 App 存款页一致：现金陶土橘 / 黄金暖黄深 / 股票天蓝深 / 基金木棕深 / 其他灰） */
+    /** 资产类别标签底色（与 App 资产页一致：现金陶土橘 / 黄金暖黄深 / 股票天蓝深 / 基金木棕深 / 其他灰） */
     private fun depTagColor(cat: String): Int = when (cat) {
         DepositCats.CASH -> Px.Clay.toArgb()
         DepositCats.GOLD -> Px.YellowDark.toArgb()

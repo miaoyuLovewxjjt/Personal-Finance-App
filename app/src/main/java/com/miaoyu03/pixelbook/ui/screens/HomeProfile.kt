@@ -63,7 +63,7 @@ fun ProfileCard(
     onOpenWallet: () -> Unit,
     onOpenSaving: () -> Unit,
 ) {
-    // 资产类别汇总（账户级公用存款；默认类别序在前，自定义按名称）
+    // 资产类别汇总（账户级公用资产；默认类别序在前，自定义按名称）
     val deps = remember(account.id) { store.accountDepList(account.id) }
     val byCat = remember(deps) { deps.groupBy { it.category } }
     val orderedCats = remember(byCat) {

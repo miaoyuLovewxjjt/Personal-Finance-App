@@ -50,6 +50,7 @@ import com.miaoyu03.pixelbook.data.label
 import com.miaoyu03.pixelbook.ui.Px
 import com.miaoyu03.pixelbook.ui.PixelButton
 import com.miaoyu03.pixelbook.ui.PixelDialog
+import com.miaoyu03.pixelbook.ui.PixelConfirm
 import com.miaoyu03.pixelbook.ui.PixelDropdown
 import com.miaoyu03.pixelbook.ui.PixelHeader
 import com.miaoyu03.pixelbook.ui.PixelIcon
@@ -275,6 +276,7 @@ private fun AssetListPane(
 ) {
     var showForm by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<AssetAccount?>(null) }
+    var confirmDelete by remember { mutableStateOf<AssetAccount?>(null) }   // 删除前确认（有流水时提示）
     var hideBal by remember { mutableStateOf(false) }
     // 数据变更计数：新增/编辑/删除后自增 → assets 重新读取（remember 依赖它，而不是只依赖 accountId）
     var refresh by remember { mutableIntStateOf(0) }
@@ -333,10 +335,7 @@ private fun AssetListPane(
                             balance = store.assetBalance(accountId, a.id),
                             hide = hideBal,
                             onClick = { editing = a },
-                            onDelete = {
-                                store.deleteAsset(accountId, a.id)
-                                bump()
-                            },
+                            onDelete = { confirmDelete = a },
                         )
                         Spacer(Modifier.height(8.dp))
                     }
@@ -368,6 +367,24 @@ private fun AssetListPane(
             initial = editing,
             onDismiss = { showForm = false; editing = null },
             onSaved = { showForm = false; editing = null; bump() },
+        )
+    }
+    // 删除资产前确认：该资产已被流水引用时明确提示（历史流水将显示为「未指定」）
+    confirmDelete?.let { a ->
+        val inUse = store.assetHasFlow(accountId, a.id)
+        PixelConfirm(
+            title = "删除资产账户",
+            message = if (inUse) {
+                "「${a.label()}」已被历史流水引用，删除后这些流水将显示为「未指定」。确定删除吗？"
+            } else {
+                "确定删除资产账户「${a.label()}」吗？"
+            },
+            confirmText = "删除",
+            onConfirm = {
+                store.deleteAsset(accountId, a.id)
+                bump()
+            },
+            onDismiss = { confirmDelete = null },
         )
     }
 }

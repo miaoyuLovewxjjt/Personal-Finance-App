@@ -159,14 +159,14 @@ fun MonthScreen(
         if (confirmReset) {
             PixelConfirm(
                 title = "重置本月归档",
-                message = "将删除本月已归档的「攒钱」存款记录并清除归档标记，之后可以重新一键同步。",
+                message = "将删除本月已归档的「攒钱」资产记录并清除归档标记，之后可以重新一键同步。",
                 confirmText = "重置",
                 onConfirm = {
                     if (store.resetArchive(ledgerId, ym)) {
                         tick++
                         store.toast("已重置本月归档，可重新一键同步")
                     } else {
-                        store.toast("重置失败：存款删除未成功，请检查存储后重试")
+                        store.toast("重置失败：资产删除未成功，请检查存储后重试")
                     }
                     confirmReset = false
                 },
@@ -208,7 +208,7 @@ fun MonthScreen(
                             tick++
                             store.toast("已把结余 ${moneyInt(balance)} 元归档到我的资产")
                         } else {
-                            store.toast("归档失败：存款写入未成功，请检查存储后重试")
+                            store.toast("归档失败：资产写入未成功，请检查存储后重试")
                         }
                     },
                     enabled = !synced,

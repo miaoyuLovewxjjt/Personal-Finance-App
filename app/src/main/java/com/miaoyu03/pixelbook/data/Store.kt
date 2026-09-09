@@ -78,6 +78,7 @@ class Store(context: Context) {
     @Volatile private var accountRawCache: String? = null
     private val catsRawCache = HashMap<String, String>()
     private val assetsRawCache = HashMap<String, String>()
+    private val depRawCache = HashMap<String, String>()     // accountId → my_saving.json 原文
     private val ledgerByIdCache = HashMap<String, Ledger>()
 
     init {
@@ -408,7 +409,7 @@ class Store(context: Context) {
 
     /**
      * 旧版裸数据（无账户）→ 搬到「默认账户」；合并式幂等：
-     *  - 目标已有「默认账户」账户 → 旧数据写入其文件夹（类别取并集、存款汇入、账本同名跳过），不重复注册；
+     *  - 目标已有「默认账户」账户 → 旧数据写入其文件夹（类别取并集、资产汇入、账本同名跳过），不重复注册；
      *  - 目标已有其他账户（如用户自建 xxx）→ 追加注册默认账户，两者并存不合并；
      *  - 无任何旧数据形态（旧前缀文件 / 非规范 json）→ 零成本返回。
      */
@@ -526,7 +527,7 @@ class Store(context: Context) {
             val cats = if (catsRaw != null) mergeCatsJson(existingCats, catsRaw) else catsJson(IncomeCats.list, ExpenseCats.list)
             target.writeNamedRaw("$folder/$CATS_JSON", cats)
         }
-        // 存款/钱包占位：仅缺失时补空文件（已有内容绝不覆盖）
+        // 资产/钱包占位：仅缺失时补空文件（已有内容绝不覆盖）
         if (target.readNamedRaw("$folder/$SAVING_JSON") == null) target.writeNamedRaw("$folder/$SAVING_JSON", "[]")
         if (target.readNamedRaw("$folder/$PAYMENT_JSON") == null) target.writeNamedRaw("$folder/$PAYMENT_JSON", "[]")
         // 逐账本搬入：文件已规范名（沿用索引里的 file 或推导）；同名已存在则跳过（幂等，不覆盖）
@@ -560,7 +561,7 @@ class Store(context: Context) {
         }
         summary.migrated = ok
 
-        // 数据包内残留旧存款（按账本存）→ 汇入 my_saving.json
+        // 数据包内残留旧资产（按账本存）→ 汇入 my_saving.json
         runCatching { foldBundledDepsToSaving(target, folder) }
 
         // 清理旧源（内部 SharedPreferences / SAF 根旧文件）——读到并搬走后才删
@@ -627,9 +628,9 @@ class Store(context: Context) {
     }
 
     /**
-     * 把某账户文件夹内 my_ledger_*.json 数据包里残留的旧 dps（按账本存的存款）
+     * 把某账户文件夹内 my_ledger_*.json 数据包里残留的旧 dps（按账本存的资产）
      * 汇入 my_saving.json（标注来源账本），并从数据包中移除 dps 键。
-     * 语义与旧 migrateDepsToAccount 一致；normalize 两分支均调用，保证不丢存款。
+     * 语义与旧 migrateDepsToAccount 一致；normalize 两分支均调用，保证不丢资产。
      */
     private fun foldBundledDepsToSaving(target: LedgerIO, folder: String) {
         val savingPath = "$folder/$SAVING_JSON"
@@ -716,10 +717,12 @@ class Store(context: Context) {
     fun addAccount(name: String): Account? {
         val nm = name.trim()
         if (nm.isEmpty() || accounts().any { it.name == nm }) return null
-        val id = "a${newId()}"
         val folder = accountFolder(nm)
+        // 清洗后目录与磁盘已有目录冲突（如 "a:b" 与 "a_b" 清洗同名）→ 拒绝，防数据混入
+        if (io.listDirs().any { it == folder }) return null
+        val id = "a${newId()}"
         io.createDir(folder)
-        // 规范文件：类别（内置默认）+ 存款/钱包空占位（空也是 [] 文件）
+        // 规范文件：类别（内置默认）+ 资产/钱包空占位（空也是 [] 文件）
         safeIo {
             io.writeNamedRaw("$folder/$CATS_JSON", catsJson(IncomeCats.list, ExpenseCats.list))
             io.writeNamedRaw("$folder/$SAVING_JSON", "[]")
@@ -775,6 +778,8 @@ class Store(context: Context) {
         if (nm.isEmpty() || accounts().any { it.name == nm }) return false
         val oldFolder = accountFolder(old.name)
         val newFolder = accountFolder(nm)
+        // 清洗后目录已被其他账户占用 → 拒绝，防覆盖/混入
+        if (newFolder != oldFolder && io.listDirs().any { it == newFolder }) return false
         // 账户文件夹存在才改名（防止异常状态下重命名空名目录）
         if (io.listDirRaw(oldFolder).isNotEmpty() || io.readNamedRaw("$oldFolder/$CATS_JSON") != null ||
             io.readNamedRaw("$oldFolder/$SAVING_JSON") != null || io.readNamedRaw("$oldFolder/$PAYMENT_JSON") != null
@@ -839,6 +844,7 @@ class Store(context: Context) {
         ledgerByIdCache.clear()
         catsRawCache.remove(id)
         assetsRawCache.remove(id)
+        depRawCache.remove(id)
         val arr = JSONArray()
         readAccountsRaw().forEach { if (it.optString("id") != id) arr.put(it) }
         safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
@@ -1033,21 +1039,22 @@ class Store(context: Context) {
     private fun readCatsFor(accountId: String, tag: String, defaults: List<String>): List<String> {
         val o = readCatsObj(accountId)
         val list = readCatsArr(o, tag, defaults)
-        // 新装账户未写文件时补一个默认文件
+        // 新装账户未写文件时补一个默认文件（含 dep 资产类别组，保持文件完整）
         if (o == null) writeCats(accountId, JSONObject().apply {
             put("in", JSONArray(readCatsArr(null, "in", IncomeCats.list)))
             put("out", JSONArray(readCatsArr(null, "out", ExpenseCats.list)))
+            put("dep", JSONArray(DepositCats.list))
         })
         return list
     }
 
-    /* ================= 存款类别（my_choice.json 的 dep 组；默认 现金/黄金/股票/基金/其他） ================= */
+    /* ================= 资产类别（my_choice.json 的 dep 组；默认 现金/黄金/股票/基金/其他） ================= */
 
-    /** 存款类别表（账户一份；未初始化返回默认五类） */
+    /** 资产类别表（账户一份；未初始化返回默认五类） */
     fun depCats(accountId: String): List<String> =
         readCatsArr(readCatsObj(accountId), "dep", DepositCats.list)
 
-    /** 新增存款类别（录入时手动新增，≤10 字由 UI 截断）；已存在视为成功（返回 true） */
+    /** 新增资产类别（录入时手动新增，≤10 字由 UI 截断）；已存在视为成功（返回 true） */
     fun addDepCat(accountId: String, name: String): Boolean {
         val n = name.trim()
         if (n.isEmpty() || n == CATEGORY_OTHERS) return false
@@ -1063,7 +1070,7 @@ class Store(context: Context) {
         return true
     }
 
-    /** 既有 dep 组（未初始化则默认表）——in/out 类别写入时保护存款类别不丢 */
+    /** 既有 dep 组（未初始化则默认表）——in/out 类别写入时保护资产类别不丢 */
     private fun depArrOf(accountId: String): JSONArray {
         val arr = readCatsObj(accountId)?.optJSONArray("dep")
         return arr ?: JSONArray(DepositCats.list)
@@ -1176,6 +1183,14 @@ class Store(context: Context) {
         if (idx >= 0) list[idx] = asset else list.add(asset)
         writeAssets(accountId, list)
         return true
+    }
+
+    /** 该资产账户是否已被流水引用（删除前提示用） */
+    fun assetHasFlow(accountId: String, assetId: String): Boolean {
+        for (l in ledgersOf(accountId)) {
+            if (txList(l.id).any { it.asset == assetId }) return true
+        }
+        return false
     }
 
     fun deleteAsset(accountId: String, assetId: String) {
@@ -1312,23 +1327,23 @@ class Store(context: Context) {
         txCache[ledgerId] = list
     }
 
-    /* ================= 存款（账户级公用：账户文件夹内 my_saving.json） ================= */
+    /* ================= 资产（账户级公用：账户文件夹内 my_saving.json） ================= */
 
-    /** 账户公用存款文件：my_saving.json（账户文件夹内，空也是 [] 文件） */
+    /** 账户公用资产文件：my_saving.json（账户文件夹内，空也是 [] 文件） */
     private fun depFile(accountId: String): String {
         val folder = folderOfAccount(accountId) ?: return ""
         return "$folder/$SAVING_JSON"
     }
 
-    /** 某账户的公用存款列表 */
+    /** 某账户的公用资产列表 */
     fun accountDepList(accountId: String): List<Deposit> {
         val f = depFile(accountId)
         if (f.isEmpty()) return emptyList()
-        val raw = io.readNamedRaw(f) ?: return emptyList()
+        val raw = depRawCache[accountId] ?: io.readNamedRaw(f)?.also { depRawCache[accountId] = it } ?: return emptyList()
         return runCatching { parseDeps(raw) }.getOrDefault(emptyList())
     }
 
-    /** 账户公用存款总额（金钱类与非金钱类价值之和） */
+    /** 账户公用资产总额（金钱类与非金钱类价值之和） */
     fun accountTotalDeposits(accountId: String): Cents =
         accountDepList(accountId).sumOf { it.value }
 
@@ -1337,10 +1352,13 @@ class Store(context: Context) {
         if (f.isEmpty()) return
         val arr = JSONArray()
         list.forEach { arr.put(depToJson(it)) }
-        safeIo { io.writeNamedRaw(f, arr.toString()) }
+        val raw = arr.toString()
+        if (safeIo { io.writeNamedRaw(f, raw) }) {
+            depRawCache[accountId] = raw
+        }
     }
 
-    /** 新增一笔公用存款（ledgerId 记来源账本；直接新增可留空） */
+    /** 新增一笔公用资产（ledgerId 记来源账本；直接新增可留空） */
     fun addAccountDep(accountId: String, d: Deposit) {
         writeAccountDeps(accountId, accountDepList(accountId).toMutableList().apply { add(d) })
     }
@@ -1418,15 +1436,21 @@ class Store(context: Context) {
         return "${y?.year ?: ym.take(4)}.${y?.monthValue ?: ym.takeLast(2)} 月收入已归档·$ledgerName"
     }
 
-    /** 在账户公用存款中查找某账本某月的归档记录 */
+    /** 在账户公用资产中查找某账本某月的归档记录 */
     fun archivedDepFor(ledgerId: String, ym: String): Deposit? {
         val l = ledger(ledgerId) ?: return null
         val accId = l.accountId
-        val prefix = archiveName(l.name, ym)
-        return accountDepList(accId).firstOrNull { it.name == prefix || it.name.startsWith("${prefix.substringBefore('·')}") }
+        val full = archiveName(l.name, ym)
+        val prefix = full.substringBefore('·')
+        val list = accountDepList(accId)
+        // 精确匹配本账本记录（ld = 本账本 id）；旧版迁移记录 ld 为空 → 回退名字前缀匹配
+        return list.firstOrNull { it.ledgerId == ledgerId && it.name == full }
+            ?: list.firstOrNull { it.ledgerId == ledgerId && it.name.startsWith(prefix) }
+            ?: if (list.any { it.ledgerId == ledgerId }) null
+            else list.firstOrNull { it.name == full || it.name.startsWith(prefix) }
     }
 
-    /** 一键同步：把某账本某月结余存入账户公用存款（标来源账本名） */
+    /** 一键同步：把某账本某月结余存入账户公用资产（标来源账本名） */
     fun archiveMonth(ledgerId: String, ym: String, value: Cents): Boolean {
         val l = ledger(ledgerId) ?: return false
         val accId = l.accountId
@@ -1502,7 +1526,7 @@ class Store(context: Context) {
         return arr.toString()
     }
 
-    /** 通用 JSON 数组按 id 去重合并（存款/钱包用：目标在先、当前在后，两边数据都保留） */
+    /** 通用 JSON 数组按 id 去重合并（资产/钱包用：目标在先、当前在后，两边数据都保留） */
     private fun mergeJsonArrayById(aRaw: String?, bRaw: String?): String {
         val arr = JSONArray()
         val seen = HashSet<String>()
@@ -1572,6 +1596,7 @@ class Store(context: Context) {
             accountRawCache = null
             catsRawCache.clear()
             assetsRawCache.clear()
+            depRawCache.clear()
             // 记录历史与上次结果
             val prev = cfg.getString(KEY_STORAGE_TREE, null)
             prev?.let {

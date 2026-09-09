@@ -75,14 +75,14 @@ data class Deposit(
     val name: String,           // 物品名称
     val note: String,           // 备注
     val value: Cents,           // 价值（分）
-    val category: String = "",  // 存款类别（现金/黄金/股票/基金/其他/自定义；空=按 kind 推导）
+    val category: String = "",  // 资产类别（现金/黄金/股票/基金/其他/自定义；空=按 kind 推导）
 )
 
 enum class DepositKind(val label: String) {
     MONEY("金钱类"), GOODS("非金钱类")
 }
 
-/** 存款默认类别（旧数据兼容：金钱类→现金，非金钱类→其他） */
+/** 资产默认类别（旧数据兼容：金钱类→现金，非金钱类→其他） */
 object DepositCats {
     const val CASH = "现金"
     const val GOLD = "黄金"

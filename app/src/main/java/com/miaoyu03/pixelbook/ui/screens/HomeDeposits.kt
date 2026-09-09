@@ -97,6 +97,16 @@ fun HomeScreen(
         account?.let { store.ledgersOf(it.id) } ?: emptyList()
     }
 
+    // 回到前台（含跨 0 点）刷新：页头日期、账本列表等随 tick 重算
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) tick++
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // 顶栏：返回 + 今日日期（页面最上方；账户名/生日在下方角色卡展示）
         PixelHeader(
@@ -196,7 +206,7 @@ fun HomeScreen(
     deleting?.let { ledger ->
         PixelConfirm(
             title = "删除账本",
-            message = "删除后，账本「${ledger.name}」的全部流水、存款、天气记录将一并删除，且无法恢复。确定删除吗？",
+            message = "删除后，账本「${ledger.name}」的全部流水、资产、天气记录将一并删除，且无法恢复。确定删除吗？",
             confirmText = "删除",
             onConfirm = { store.deleteLedger(ledger.id); tick++ },
             onDismiss = { deleting = null },
@@ -374,7 +384,7 @@ private fun fmtBytes(b: Long): String = when {
 
 /* ================================================================
  * 账户存款明细（我的记账 → 存款明细）：
- * 存款为账户级「公用一本」，不分账本；各账本旧存款已自动汇入（备注标来源）。
+ * 资产为账户级「公用一本」，不分账本；各账本旧资产已自动汇入（备注标来源）。
  * ================================================================ */
 
 @Composable
@@ -409,7 +419,7 @@ fun AccountDepositsScreen(
             AmountSwitch(hide = hideAmount, onToggle = { hideAmount = !hideAmount })
         }
 
-        // 账户总存款卡
+        // 账户总资产卡
         PixelPanel(
             modifier = Modifier
                 .fillMaxWidth()
@@ -426,7 +436,7 @@ fun AccountDepositsScreen(
                     PixelIcon("chest", size = 30.dp)
                     Spacer(Modifier.width(8.dp))
                     PxText(
-                        if (hideAmount) "总存款 ¥****" else "总存款 ${Fmt.yen(total)}",
+                        if (hideAmount) "总资产 ¥****" else "总资产 ${Fmt.yen(total)}",
                         size = 16.sp,
                     )
                 }
@@ -441,7 +451,7 @@ fun AccountDepositsScreen(
             }
         }
 
-        // 公用存款：按类别分组（现金/黄金/股票/基金/其他 + 自定义），各组内时间降序
+        // 公用资产：按类别分组（现金/黄金/股票/基金/其他 + 自定义），各组内时间降序
         LazyColumn(modifier = Modifier.weight(1f)) {
             grouped.forEach { (cat, list) ->
                 DepositGroup(
@@ -456,7 +466,7 @@ fun AccountDepositsScreen(
             if (deposits.isEmpty()) {
                 item {
                     Spacer(Modifier.height(60.dp))
-                    PxText("还没有存款，点击下方按钮新增", size = 13.sp, color = Px.GrayText, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    PxText("还没有资产，点击下方按钮新增", size = 13.sp, color = Px.GrayText, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 }
             }
             item { Spacer(Modifier.height(10.dp)) }
@@ -470,7 +480,7 @@ fun AccountDepositsScreen(
             contentAlignment = Alignment.Center,
         ) {
             PixelButton(
-                text = "＋ 新增存款",
+                text = "＋ 新增资产",
                 onClick = { showForm = true },
                 modifier = Modifier.width(220.dp),
             )
@@ -488,8 +498,8 @@ fun AccountDepositsScreen(
     }
     deleting?.let { d ->
         PixelConfirm(
-            title = "删除存款",
-            message = "确定删除「${d.name}」这笔存款吗？",
+            title = "删除资产",
+            message = "确定删除「${d.name}」这笔资产吗？",
             confirmText = "删除",
             onConfirm = { store.deleteAccountDep(accountId, d.id); tick++ },
             onDismiss = { deleting = null },
@@ -497,7 +507,7 @@ fun AccountDepositsScreen(
     }
 }
 
-/** 账户公用存款 新增/编辑 表单（新增不归属任何账本） */
+/** 账户公用资产 新增/编辑 表单（新增不归属任何账本） */
 @Composable
 private fun AccountDepositFormDialog(
     store: Store,
@@ -523,7 +533,7 @@ private fun AccountDepositFormDialog(
     }
 
     PixelDialog(
-        title = if (initial == null) "新增存款" else "编辑存款",
+        title = if (initial == null) "新增资产" else "编辑资产",
         onDismiss = onDismiss,
         footer = {
             PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
@@ -1076,7 +1086,7 @@ private fun AmountSwitch(hide: Boolean, onToggle: () -> Unit) {
     PixelSegSwitch(hidden = hide, onToggle = onToggle)
 }
 
-/** 存款类别 → 图标（现金=钞票 / 黄金=金币堆 / 股票=柱状图 / 基金=宝箱 / 其他·自定义=省略号） */
+/** 资产类别 → 图标（现金=钞票 / 黄金=金币堆 / 股票=柱状图 / 基金=宝箱 / 其他·自定义=省略号） */
 fun depCatIcon(cat: String): String = when (cat) {
     DepositCats.CASH -> "bills"
     DepositCats.GOLD -> "coinPile"
@@ -1085,7 +1095,7 @@ fun depCatIcon(cat: String): String = when (cat) {
     else -> "dots"
 }
 
-/** 存款类别 → 标签底色（默认类低饱和暖色，自定义灰） */
+/** 资产类别 → 标签底色（默认类低饱和暖色，自定义灰） */
 fun depCatColor(cat: String): Color = when (cat) {
     DepositCats.CASH -> Px.Clay
     DepositCats.GOLD -> Px.YellowDark
