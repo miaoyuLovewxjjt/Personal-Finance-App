@@ -900,6 +900,46 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 角色头像：短发男子（深棕短发 + 草绿上衣，星露谷风大头像） ================= */
+    val avatarMan = Def("avatarMan", basePalette, listOf(
+        "................",
+        "................",
+        "....bbbbbbb.....",
+        "...bnnnnnnnb....",
+        "..bnnnnnnnnnb...",
+        "..bnnwwwwwwwnb..",   // 短发帘 + 额头
+        "..bwwwwwwwwwwb..",   // 脸
+        "..bwwbwwwwbwwb..",   // 眼睛
+        "..bwwwwwwwwwwb..",
+        "..bwwwwwwwwwwb..",
+        "..bwwwwwwwwwwb..",
+        "...bwwwwwwwwb...",   // 下巴收
+        "....bwwwwwwb....",
+        "....bbbbbbbb....",   // 颈肩
+        ".bbggggggggggbb.",   // 上衣（草绿）
+        "..bbbbbbbbbbbb..",
+    ))
+
+            /* ================= 角色头像：长发女子（深棕长发垂肩 + 陶土橘上衣） ================= */
+    val avatarWoman = Def("avatarWoman", basePalette, listOf(
+"................",
+"................",
+"....bbbbbbb.....",
+"...bnnnnnnnb....",
+".bnnnnnnnnnnnnb.",
+".bnnnnnnnnnnnnb.",
+".bnnwwwwwwwwnnb.",
+".bwwwwwwwwwwwwb.",
+".bwwbbwwwwbbwwb.",
+".bwwwwwwwwwwwwb.",
+".bnwwwwwwwwwwnb.",
+".bnnnnnnnnnnnnb.",
+".bnnoooooooonnb.",
+".bnnoooooooonnb.",
+".bnnnnnnnnnnnnb.",
+"..bbbbbbbbbbbb.."
+    ))
+
     /* ============ 渲染 ============ */
 
     private val cache = mutableMapOf<String, ImageBitmap>()
@@ -933,6 +973,7 @@ object PixelIcons {
         "rain" -> rain; "snow" -> snow; "chest" -> chest
         "windy" -> windy; "statChart" -> statChart
         "gear" -> gear; "export" -> export
+        "avatarMan" -> avatarMan; "avatarWoman" -> avatarWoman
         else -> dots
     }
 

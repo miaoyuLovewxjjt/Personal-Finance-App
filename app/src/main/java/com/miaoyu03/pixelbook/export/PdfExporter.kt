@@ -39,7 +39,7 @@ import kotlin.math.sin
  * 布局与 App 对齐：卡片式区块 + 宽松行距，块整体不跨页（杜绝文字挤压/骑标题）。
  * 章节结构（同 App 左侧导航的年 → 月 → 日分级）：
  *   一、账本信息
- *   二、我的存款
+ *   二、我的资产
  *   三、收支明细
  *       {2026年}
  *           {2026年9月}
@@ -151,7 +151,7 @@ object PdfExporter {
         // 章节目录：行自动换行（最多 2 行），面板高度按内容自适应
         val tocLines = listOf(
             Pair("ledger", "一、账本信息"),
-            Pair("chest", "二、我的存款"),
+            Pair("chest", "二、我的资产"),
             Pair("expense", "三、收支明细（按 年 → 月 → 日 分级，含日/月/年度各级总结）"),
         )
         val tocY = infoY + infoH + 24f
@@ -191,12 +191,12 @@ object PdfExporter {
         eng.txt.draw(c, text, M + 42f, y, F_BODY, Px.Brown.toArgb())
     }
 
-    /* ================= 二、我的存款（卡片式列表） ================= */
+    /* ================= 二、我的资产（卡片式列表） ================= */
 
     private fun deposits(eng: Engine, deps: List<Deposit>) {
         eng.newSection()
         eng.ensure(60f)
-        chapterHeader(eng, "二、我的存款", "共 ${deps.size} 笔")
+        chapterHeader(eng, "二、我的资产", "共 ${deps.size} 笔")
         val c = eng.c!!
 
         val sorted = deps.sortedWith(

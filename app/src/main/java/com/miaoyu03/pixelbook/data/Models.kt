@@ -18,6 +18,9 @@ data class Account(
     val name: String,
     val createdAt: String = LocalDate.now().toString(),
     val updatedAt: Long = 0L,   // 最近编辑/切换时间（epoch millis；0 = 旧数据无记录，按创建时间兜底）
+    val birthday: String = "",  // 生日（自由文本，如 "1998-06-15"，角色卡展示；空 = 未设置）
+    val note: String = "",      // 备注（角色卡展示，≤60 字）
+    val avatar: Int = 0,        // 角色形象：0 = 短发男子，1 = 长发女子
 )
 
 /** 资产账户（银行卡/支付宝/微信…，属于某个账户；最新余额由流水自动计算，不可手改） */
@@ -100,7 +103,7 @@ const val MAX_CAT_LEN = 10                   // 自定义类别：最多 10 个�
 const val MAX_ROLE_LEN = 10                  // 资产账户角色：最多 10 个汉字，不可重复
 const val MAX_ASSET_SUB_LEN = 20             // 资产账户子类别（卡号/账号）：最多 20 字
 const val MAX_ACCOUNT_NAME_LEN = 30          // 账户名：最多 30 字
-const val MAX_BOARD_LEN = 60                 // 目录页公告板便签：最多 60 字（账户级）
+const val MAX_ACCOUNT_NOTE_LEN = 60          // 账户备注：最多 60 字（角色卡展示）
 const val MAX_LEDGER_PER_ACCOUNT = 60        // 每个账户下最多账本数
 
 /** 旧数据迁移时创建的默认账户名 */

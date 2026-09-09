@@ -50,7 +50,6 @@ import com.miaoyu03.pixelbook.data.Deposit
 import com.miaoyu03.pixelbook.data.DepositCats
 import com.miaoyu03.pixelbook.data.DepositKind
 import com.miaoyu03.pixelbook.data.Fmt
-import com.miaoyu03.pixelbook.data.MAX_BOARD_LEN
 import com.miaoyu03.pixelbook.data.MAX_CAT_LEN
 import com.miaoyu03.pixelbook.data.MAX_NOTE_LEN
 import com.miaoyu03.pixelbook.data.Store
@@ -64,7 +63,6 @@ import com.miaoyu03.pixelbook.ui.PixelHeader
 import com.miaoyu03.pixelbook.ui.PixelIcon
 import com.miaoyu03.pixelbook.ui.PixelIconButton
 import com.miaoyu03.pixelbook.ui.PixelIcons
-import com.miaoyu03.pixelbook.ui.PixelMultilineTextField
 import com.miaoyu03.pixelbook.ui.PixelOption
 import com.miaoyu03.pixelbook.ui.PixelPanel
 import com.miaoyu03.pixelbook.ui.PixelSegSwitch
@@ -90,21 +88,19 @@ fun HomeScreen(
     var showNewLedger by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Ledger?>(null) }
     var editing by remember { mutableStateOf<com.miaoyu03.pixelbook.data.Ledger?>(null) }
-    var showBoardEdit by remember { mutableStateOf(false) }   // 公告板便签编辑
+    var showProfileEdit by remember { mutableStateOf(false) }   // 角色面板资料编辑
 
     val accounts = remember(tick) { store.accounts() }
     val curId = remember(tick) { store.currentAccountId() }
     val account = accounts.firstOrNull { it.id == curId }
-    // 公告板便签（账户级一份）
-    val boardNote = remember(tick, account?.id) { account?.let { store.boardNote(it.id) } ?: "" }
     val ledgers = remember(tick, account?.id) {
         account?.let { store.ledgersOf(it.id) } ?: emptyList()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶栏：返回 + 当前账号（账号管理请回首页右上角设置）
+        // 顶栏：返回 + 今日日期（页面最上方；账户名/生日在下方角色卡展示）
         PixelHeader(
-            title = account?.name ?: "我的记账",
+            title = Fmt.dateFull(LocalDate.now()),
             onBack = onBack,
         )
         Box(modifier = Modifier.fillMaxSize()) {
@@ -114,42 +110,19 @@ fun HomeScreen(
             ) {
                 item { Spacer(Modifier.height(14.dp)) }
                 if (account != null) {
-                    // 今日日期（页面最上方居中）
+                    item { Spacer(Modifier.height(16.dp)) }
+                    // 角色面板（头像/资料 + 我的钱包入口 + 我的资产概览）
                     item {
-                        PxText(
-                            Fmt.dateFull(LocalDate.now()),
-                            size = 17.sp,
-                            color = Px.Brown,
-                            align = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    item { Spacer(Modifier.height(10.dp)) }
-                    // 公告板便签（账户级：点击书写备注，最多 60 字）
-                    item {
-                        BoardNoteCard(note = boardNote, onClick = { showBoardEdit = true })
-                    }
-                    item { Spacer(Modifier.height(18.dp)) }
-                    // 功能区（标题格式通栏）
-                    item {
-                        SectionLink(
-                            icon = "chest",
-                            title = "我的存款",
-                            sub = "本账户公用的一本存款，不分账本",
-                            onClick = { onOpenAccountDeposits(account.id) },
-                        )
-                    }
-                    item { Spacer(Modifier.height(10.dp)) }
-                    item {
-                        SectionLink(
-                            icon = "bankCard",
-                            title = "我的钱包",
-                            sub = "银行卡 / 支付宝 / 微信等资产账户",
-                            onClick = { onOpenAssets(account.id) },
+                        ProfileCard(
+                            store = store,
+                            account = account,
+                            onEditProfile = { showProfileEdit = true },
+                            onOpenWallet = { onOpenAssets(account.id) },
+                            onOpenSaving = { onOpenAccountDeposits(account.id) },
                         )
                     }
                     item { Spacer(Modifier.height(18.dp)) }
-                    // 我的记账区标题（账本列表；与「我的存款/我的钱包」同一级入口样式）
+                    // 我的记账区标题（账本列表）
                     item {
                         Row(
                             modifier = Modifier
@@ -237,79 +210,14 @@ fun HomeScreen(
             onSaved = { editing = null; tick++ },
         )
     }
-    // 公告板便签编辑弹窗
-    if (showBoardEdit && account != null) {
-        BoardNoteDialog(
+    // 角色面板资料编辑弹窗（头像/账户名/生日/备注）
+    if (showProfileEdit && account != null) {
+        ProfileDialog(
             store = store,
-            accountId = account.id,
-            initial = boardNote,
-            onDismiss = { showBoardEdit = false },
-            onSaved = { showBoardEdit = false; tick++ },
+            account = account,
+            onDismiss = { showProfileEdit = false },
+            onSaved = { showProfileEdit = false; tick++ },
         )
-    }
-}
-
-/** 账户木质卡（标题下方靠左通栏）：木底奶油字，右侧操作按钮 */
-@Composable
-private fun AccountWoodCard(
-    account: com.miaoyu03.pixelbook.data.Account,
-    ledgerCount: Int,
-    onClick: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
-    onAdd: () -> Unit,
-) {
-    PixelPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .clickable(onClick = onClick),
-        bg = Px.Wood,
-        contentPadding = 8.dp,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            PixelIcon("idcard", size = 28.dp)
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                PxText(account.name, size = 17.sp, color = Px.Cream, maxLines = 1)
-                Spacer(Modifier.height(2.dp))
-                PxText(
-                    "账本 $ledgerCount / ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT} · 点按切换账户",
-                    size = 11.sp,
-                    color = Px.Cream.copy(alpha = 0.72f),
-                )
-            }
-            PixelIconButton(icon = "pencil", size = 30.dp, bg = Px.Cream, onClick = onEdit, desc = "编辑账户")
-            Spacer(Modifier.width(4.dp))
-            PixelIconButton(icon = "trash", size = 30.dp, bg = Px.Cream, onClick = onDelete, desc = "删除账户")
-            Spacer(Modifier.width(4.dp))
-            PixelIconButton(icon = "plus", size = 30.dp, bg = Px.Yellow, onClick = onAdd, desc = "新建账户")
-        }
-    }
-}
-
-/** 首页通栏功能区（标题格式，点按进入；无尾随箭头，保持整洁） */
-@Composable
-private fun SectionLink(icon: String, title: String, sub: String, onClick: () -> Unit) {
-    PixelPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .clickable(onClick = onClick),
-        bg = Px.Cream,
-        contentPadding = 12.dp,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            PixelIcon(icon, size = 30.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                PxText(title, size = 16.sp, color = Px.Brown)
-                if (sub.isNotEmpty()) {
-                    Spacer(Modifier.height(2.dp))
-                    PxText(sub, size = 11.sp, color = Px.GrayText)
-                }
-            }
-        }
     }
 }
 
@@ -487,7 +395,7 @@ fun AccountDepositsScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         PixelHeader(
-            title = "我的存款",
+            title = "我的资产",
             onBack = onBack,
         )
 
@@ -1169,7 +1077,7 @@ private fun AmountSwitch(hide: Boolean, onToggle: () -> Unit) {
 }
 
 /** 存款类别 → 图标（现金=钞票 / 黄金=金币堆 / 股票=柱状图 / 基金=宝箱 / 其他·自定义=省略号） */
-private fun depCatIcon(cat: String): String = when (cat) {
+fun depCatIcon(cat: String): String = when (cat) {
     DepositCats.CASH -> "bills"
     DepositCats.GOLD -> "coinPile"
     DepositCats.STOCK -> "statChart"
@@ -1178,101 +1086,10 @@ private fun depCatIcon(cat: String): String = when (cat) {
 }
 
 /** 存款类别 → 标签底色（默认类低饱和暖色，自定义灰） */
-private fun depCatColor(cat: String): Color = when (cat) {
+fun depCatColor(cat: String): Color = when (cat) {
     DepositCats.CASH -> Px.Clay
     DepositCats.GOLD -> Px.YellowDark
     DepositCats.STOCK -> Px.SkyDark
     DepositCats.FUND -> Px.WoodDark
     else -> Px.GrayText
-}
-
-/* ================================================================
- * 目录页公告板便签（账户级）：木牌 + 四角图钉 + 今日便签
- * 点击打开书写弹窗（多行输入，最多 60 字，存 my_board.json）
- * ================================================================ */
-
-/** 公告板卡片：木色板面 + 深棕描边 + 四角陶土橘图钉（与启动页公告牌同风格） */
-@Composable
-private fun BoardNoteCard(note: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .heightIn(min = 74.dp)
-            .clickable(onClick = onClick)
-            .drawBehind {
-                // 木牌外框(深)
-                drawRect(Px.BrownDark, size = Size(size.width, size.height))
-                drawRect(Px.Brown, topLeft = Offset(0f, 4.dp.toPx()), size = Size(size.width, size.height - 4.dp.toPx()))
-                // 板面(木)
-                drawRect(Px.Wood, topLeft = Offset(4.dp.toPx(), 8.dp.toPx()), size = Size(size.width - 8.dp.toPx(), size.height - 12.dp.toPx()))
-                // 内描边
-                drawRect(Px.WoodDark, topLeft = Offset(8.dp.toPx(), 12.dp.toPx()), size = Size(size.width - 16.dp.toPx(), size.height - 20.dp.toPx()), style = Stroke(2.dp.toPx()))
-                // 四角图钉
-                val pin = 5.dp.toPx()
-                drawRect(Px.Clay, topLeft = Offset(6.dp.toPx(), 9.dp.toPx()), size = Size(pin, pin))
-                drawRect(Px.Clay, topLeft = Offset(size.width - 6.dp.toPx() - pin, 9.dp.toPx()), size = Size(pin, pin))
-                drawRect(Px.Clay, topLeft = Offset(6.dp.toPx(), size.height - 14.dp.toPx()), size = Size(pin, pin))
-                drawRect(Px.Clay, topLeft = Offset(size.width - 6.dp.toPx() - pin, size.height - 14.dp.toPx()), size = Size(pin, pin))
-            }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("pencil", size = 15.dp)
-                Spacer(Modifier.width(6.dp))
-                PxText("今日便签", size = 12.sp, color = Px.Cream)
-            }
-            Spacer(Modifier.height(6.dp))
-            PxText(
-                note.ifEmpty { "点按写下今日便签（最多 60 字）" },
-                size = 13.sp,
-                color = Px.Cream.copy(alpha = if (note.isEmpty()) 0.65f else 1f),
-                maxLines = 3,
-            )
-        }
-    }
-}
-
-/** 公告板便签编辑弹窗：多行输入（≤60 字，实时截断）+ 字数提示 */
-@Composable
-private fun BoardNoteDialog(
-    store: Store,
-    accountId: String,
-    initial: String,
-    onDismiss: () -> Unit,
-    onSaved: () -> Unit,
-) {
-    var note by remember { mutableStateOf(initial) }
-    PixelDialog(
-        title = "今日便签",
-        onDismiss = onDismiss,
-        footer = {
-            PixelButton("取消", onDismiss, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
-            PixelButton(
-                "保存",
-                {
-                    if (store.setBoardNote(accountId, note.trim())) onSaved()
-                },
-                bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
-            )
-        },
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            PixelMultilineTextField(
-                value = note,
-                onValueChange = { note = Fmt.clip(it, MAX_BOARD_LEN) },
-                placeholder = "写下今天的想法、待办、备忘…",
-                minHeight = 110.dp,
-            )
-            Spacer(Modifier.height(8.dp))
-            PxText(
-                "${note.codePointCount(0, note.length)} / $MAX_BOARD_LEN 字",
-                size = 11.sp,
-                color = Px.GrayText,
-                align = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
 }

@@ -20,7 +20,7 @@ import java.time.format.DateTimeFormatter
  *     my_account.json                 账户索引（全局一份；账户名/创建时间/占用字节等）
  *     <账户文件夹>/                   账户名（自动跟随改名；账户名唯一）
  *       my_choice.json                该账户自定义类别（收支通用，账户内一份）
- *       my_saving.json                我的存款（账户公用一本；空文件也保留，内容为 []）
+ *       my_saving.json                我的资产（账户公用一本；空文件也保留，内容为 []）
  *       my_payment.json               我的钱包资产账户（空文件也保留，内容为 []）
  *       my_ledger_<账本名>_<时间戳>.json   每账本一个数据包（txs/wx/bdg/ledger 元信息）
  *
@@ -78,7 +78,6 @@ class Store(context: Context) {
     @Volatile private var accountRawCache: String? = null
     private val catsRawCache = HashMap<String, String>()
     private val assetsRawCache = HashMap<String, String>()
-    private val boardNoteCache = HashMap<String, String>()
     private val ledgerByIdCache = HashMap<String, Ledger>()
 
     init {
@@ -127,7 +126,6 @@ class Store(context: Context) {
         private const val CATS_JSON = "my_choice.json"
         private const val SAVING_JSON = "my_saving.json"
         private const val PAYMENT_JSON = "my_payment.json"
-        private const val BOARD_JSON = "my_board.json"          // 目录页公告板便签（账户级一份）
         private const val LEDGER_FILE_PREFIX = "my_ledger_"
         private const val LEDGER_FILE_SUFFIX = ".json"
         // 旧版/过渡期文件名（normalize 识别、迁移用）
@@ -210,6 +208,9 @@ class Store(context: Context) {
                     name = it.getString("name"),
                     createdAt = it.optString("created", ""),
                     updatedAt = it.optLong("updated", 0L),
+                    birthday = it.optString("bd", ""),
+                    note = it.optString("note", ""),
+                    avatar = it.optInt("av", 0),
                 )
             }.getOrNull()
         }
@@ -249,6 +250,9 @@ class Store(context: Context) {
                     put("id", o.optString("id")); put("name", o.optString("name"))
                     put("created", o.optString("created", "")); put("updated", now)
                     put("folder", o.optString("folder", "")); put("size", o.optLong("size", 0L))
+                    if (o.optString("bd", "").isNotEmpty()) put("bd", o.optString("bd"))
+                    if (o.optString("note", "").isNotEmpty()) put("note", o.optString("note"))
+                    if (o.optInt("av", 0) != 0) put("av", o.optInt("av"))
                 })
                 changed = true
             } else arr.put(o)
@@ -750,6 +754,9 @@ class Store(context: Context) {
                     put("id", it.optString("id")); put("name", it.optString("name"))
                     put("created", it.optString("created")); put("folder", it.optString("folder"))
                     put("size", size)
+                    if (it.optString("bd", "").isNotEmpty()) put("bd", it.optString("bd"))
+                    if (it.optString("note", "").isNotEmpty()) put("note", it.optString("note"))
+                    if (it.optInt("av", 0) != 0) put("av", it.optInt("av"))
                 })
             } else arr.put(it)
         }
@@ -781,6 +788,9 @@ class Store(context: Context) {
                 arr.put(JSONObject().apply {
                     put("id", id); put("name", nm); put("created", it.optString("created", ""))
                     put("folder", newFolder); put("size", it.optLong("size", 0L))
+                    if (it.optString("bd", "").isNotEmpty()) put("bd", it.optString("bd"))
+                    if (it.optString("note", "").isNotEmpty()) put("note", it.optString("note"))
+                    if (it.optInt("av", 0) != 0) put("av", it.optInt("av"))
                 })
             } else arr.put(it)
         }
@@ -788,6 +798,34 @@ class Store(context: Context) {
         accountRawCache = null
         return true
     }
+
+    /**
+     * 更新账户资料（角色形象/生日/备注；账户名变化时同步重命名文件夹与索引）。
+     * 账户名与其他账户同名/为空返回 false（复用 renameAccount 校验与文件夹改名）。
+     */
+    fun updateAccountProfile(id: String, newName: String, birthday: String, note: String, avatar: Int): Boolean {
+        val old = account(id) ?: return false
+        val nm = newName.trim()
+        if (nm.isEmpty() || accounts().any { it.name == nm && it.id != id }) return false
+        if (nm != old.name && !renameAccount(id, nm)) return false
+        val acc = account(id) ?: return false
+        val arr = JSONArray()
+        readAccountsRaw().forEach {
+            if (it.optString("id") == id) {
+                arr.put(JSONObject().apply {
+                    put("id", id); put("name", acc.name); put("created", it.optString("created", ""))
+                    put("folder", it.optString("folder", "")); put("size", it.optLong("size", 0L))
+                    put("updated", System.currentTimeMillis())
+                    put("bd", birthday.trim()); put("note", note.trim()); put("av", avatar)
+                })
+            } else arr.put(it)
+        }
+        safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
+        accountRawCache = null
+        return true
+    }
+
+
 
     /** 删除账户（连同文件夹与全部账本数据）；id 不存在返回 false */
     fun deleteAccount(id: String): Boolean {
@@ -801,7 +839,6 @@ class Store(context: Context) {
         ledgerByIdCache.clear()
         catsRawCache.remove(id)
         assetsRawCache.remove(id)
-        boardNoteCache.remove(id)
         val arr = JSONArray()
         readAccountsRaw().forEach { if (it.optString("id") != id) arr.put(it) }
         safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
@@ -1316,25 +1353,6 @@ class Store(context: Context) {
         writeAccountDeps(accountId, accountDepList(accountId).filterNot { it.id == depId })
     }
 
-    /* ================= 公告板便签（账户级 my_board.json） ================= */
-
-    /** 目录页公告板便签（账户级一份；未设置返回空串） */
-    fun boardNote(accountId: String): String {
-        val folder = folderOfAccount(accountId) ?: return ""
-        val raw = boardNoteCache[accountId] ?: io.readNamedRaw("$folder/$BOARD_JSON")?.also { boardNoteCache[accountId] = it } ?: return ""
-        return runCatching { JSONObject(raw).optString("note", "") }.getOrDefault("")
-    }
-
-    /** 写入公告板便签（≤60 字由 UI 截断）；写成功才更新缓存 */
-    fun setBoardNote(accountId: String, note: String): Boolean {
-        val folder = folderOfAccount(accountId) ?: return false
-        val raw = JSONObject().apply { put("note", note) }.toString()
-        return if (safeIo { io.writeNamedRaw("$folder/$BOARD_JSON", raw) }) {
-            boardNoteCache[accountId] = raw
-            true
-        } else false
-    }
-
     /* ================= 天气 / 每日预算（存数据包） ================= */
 
     fun weather(ledgerId: String, date: LocalDate): Weather? {
@@ -1554,7 +1572,6 @@ class Store(context: Context) {
             accountRawCache = null
             catsRawCache.clear()
             assetsRawCache.clear()
-            boardNoteCache.clear()
             // 记录历史与上次结果
             val prev = cfg.getString(KEY_STORAGE_TREE, null)
             prev?.let {

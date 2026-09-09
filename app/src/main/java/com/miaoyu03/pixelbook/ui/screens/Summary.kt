@@ -206,7 +206,7 @@ fun MonthScreen(
                         if (store.archiveMonth(ledgerId, ym, balance)) {
                             store.markSynced(ledgerId, ym)
                             tick++
-                            store.toast("已把结余 ${moneyInt(balance)} 元归档到我的存款")
+                            store.toast("已把结余 ${moneyInt(balance)} 元归档到我的资产")
                         } else {
                             store.toast("归档失败：存款写入未成功，请检查存储后重试")
                         }
