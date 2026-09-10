@@ -28,7 +28,9 @@ import com.miaoyu03.pixelbook.ui.screens.DetailScreen
 import com.miaoyu03.pixelbook.ui.screens.EntryScreen
 import com.miaoyu03.pixelbook.ui.screens.HomeScreen
 import com.miaoyu03.pixelbook.ui.screens.MonthScreen
+import com.miaoyu03.pixelbook.ui.screens.MyItemsScreen
 import com.miaoyu03.pixelbook.ui.screens.StartScreen
+import com.miaoyu03.pixelbook.ui.screens.WorkScreen
 import com.miaoyu03.pixelbook.ui.screens.YearScreen
 import java.time.LocalDate
 
@@ -38,6 +40,8 @@ sealed class Screen {
     data object Home : Screen()                 // 目录页：资产/钱包入口 + 账本列表
     data class AccountDeposits(val accountId: String) : Screen()   // 账户公用资产
     data class Assets(val accountId: String) : Screen()            // 资产账户信息维护
+    data class MyItems(val accountId: String) : Screen()           // 我的物品（持有物清单）
+    data class Work(val accountId: String) : Screen()              // 职业（个人收入形象卡）
     data class Detail(val ledgerId: String) : Screen()
     data class Entry(val ledgerId: String, val date: LocalDate) : Screen()
     data class Month(val ledgerId: String, val ym: String) : Screen()
@@ -90,6 +94,8 @@ fun PixelBookApp() {
                 onOpenLedger = { stack.add(Screen.Detail(it)) },
                 onOpenAccountDeposits = { stack.add(Screen.AccountDeposits(it)) },
                 onOpenAssets = { stack.add(Screen.Assets(it)) },
+                onOpenItems = { stack.add(Screen.MyItems(it)) },
+                onOpenWork = { stack.add(Screen.Work(it)) },
             )
             is Screen.AccountDeposits -> AccountDepositsScreen(
                 store = store,
@@ -97,6 +103,16 @@ fun PixelBookApp() {
                 onBack = { stack.removeAt(stack.lastIndex) },
             )
             is Screen.Assets -> AssetsScreen(
+                store = store,
+                accountId = top.accountId,
+                onBack = { stack.removeAt(stack.lastIndex) },
+            )
+            is Screen.MyItems -> MyItemsScreen(
+                store = store,
+                accountId = top.accountId,
+                onBack = { stack.removeAt(stack.lastIndex) },
+            )
+            is Screen.Work -> WorkScreen(
                 store = store,
                 accountId = top.accountId,
                 onBack = { stack.removeAt(stack.lastIndex) },

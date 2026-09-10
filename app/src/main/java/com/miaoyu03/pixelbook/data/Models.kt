@@ -91,6 +91,37 @@ object DepositCats {
     val list = listOf(CASH, GOLD, STOCK, FUND, CATEGORY_OTHERS)
 }
 
+/** 我的物品（账户级清单：记录持有物及其持有成本；日均价格 = 买入价格 ÷ 已用天数，运行时算） */
+data class Item(
+    val id: String,
+    val name: String,             // 物品名称
+    val note: String = "",        // 备注
+    val buyDate: LocalDate,       // 买入时间（用户填写）
+    val createdAt: String = LocalDate.now().toString(),   // 录入时间（自动）
+    val price: Cents = 0,         // 买入价格（分）
+)
+
+/**
+ * 职业档案（账户级）：个人收入形象卡的数据源。
+ * 工作日 workDays：1=周一 … 7=周日（默认周一~周五）。
+ */
+data class WorkProfile(
+    val occupation: String = "",           // 职业名（角色卡展示、点按进本页）
+    val monthlySalary: Cents = 0,          // 月薪（分）
+    val workDays: List<Int> = listOf(1, 2, 3, 4, 5),
+    val workStart: String = "09:00",       // 上班时间 HH:mm
+    val workEnd: String = "18:00",         // 下班时间 HH:mm
+    val commute: String = "",              // 通勤路线
+)
+
+/** 任务列表条目（账户级） */
+data class TaskItem(
+    val id: String,
+    val text: String,
+    val done: Boolean = false,
+    val created: String = LocalDate.now().toString(),
+)
+
 /** 兜底类别（固定，不可删除/编辑） */
 const val CATEGORY_OTHERS = "其他"
 
@@ -104,6 +135,10 @@ const val MAX_ROLE_LEN = 10                  // 资产账户角色：最多 10 �
 const val MAX_ASSET_SUB_LEN = 20             // 资产账户子类别（卡号/账号）：最多 20 字
 const val MAX_ACCOUNT_NAME_LEN = 30          // 账户名：最多 30 字
 const val MAX_ACCOUNT_NOTE_LEN = 60          // 账户备注：最多 60 字（角色卡展示）
+const val MAX_ITEM_NAME_LEN = 25             // 物品名称：最多 25 字
+const val MAX_OCCUPATION_LEN = 10            // 职业名：最多 10 字
+const val MAX_COMMUTE_LEN = 30               // 通勤路线：最多 30 字
+const val MAX_TASK_LEN = 40                  // 任务内容：最多 40 字
 const val MAX_LEDGER_PER_ACCOUNT = 60        // 每个账户下最多账本数
 
 /** 旧数据迁移时创建的默认账户名 */

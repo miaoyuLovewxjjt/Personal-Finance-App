@@ -61,6 +61,8 @@ fun ProfileCard(
     account: Account,
     onEditProfile: () -> Unit,
     onOpenWallet: () -> Unit,
+    onOpenItems: () -> Unit,
+    onOpenWork: () -> Unit,
     onOpenSaving: () -> Unit,
 ) {
     // 资产类别汇总（账户级公用资产；默认类别序在前，自定义按名称）
@@ -72,6 +74,8 @@ fun ProfileCard(
             .map { it to byCat.getValue(it).sumOf { d -> d.value } }
     }
     val total = remember(deps) { deps.sumOf { it.value } }
+    // 职业名（点按跳转职业页）
+    val workOccupation = remember(account.id) { store.workProfile(account.id).occupation }
 
     PixelPanel(
         modifier = Modifier
@@ -91,6 +95,20 @@ fun ProfileCard(
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     PxText(account.name, size = 17.sp, color = Px.Brown, maxLines = 1)
+                    // 职业（点按文字 → 职业页；briefcase 图标为装饰）
+                    val occ = workOccupation
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PixelIcon("briefcase", size = 14.dp)
+                        Spacer(Modifier.width(4.dp))
+                        PxText(
+                            occ.ifEmpty { "设置职业" },
+                            size = 12.sp,
+                            color = if (occ.isEmpty()) Px.GrayText else Px.WoodDark,
+                            modifier = Modifier
+                                .clickable(onClick = onOpenWork)
+                                .padding(vertical = 2.dp, horizontal = 1.dp),
+                        )
+                    }
                     if (account.birthday.isNotEmpty()) {
                         Spacer(Modifier.height(3.dp))
                         PxText("生日 · ${account.birthday}", size = 12.sp, color = Px.GrayText)
@@ -119,6 +137,20 @@ fun ProfileCard(
                     "我的钱包", size = 15.sp, color = Px.Brown,
                     modifier = Modifier
                         .clickable(onClick = onOpenWallet)
+                        .padding(vertical = 7.dp, horizontal = 2.dp),
+                )
+            }
+            Spacer(Modifier.height(2.dp))
+            ProfileDivider()
+            Spacer(Modifier.height(2.dp))
+            // ②b 我的物品（纸箱图标装饰 + 文字可点击 → 我的物品页；与钱包入口同款）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PixelIcon("box", size = 22.dp)
+                Spacer(Modifier.width(8.dp))
+                PxText(
+                    "我的物品", size = 15.sp, color = Px.Brown,
+                    modifier = Modifier
+                        .clickable(onClick = onOpenItems)
                         .padding(vertical = 7.dp, horizontal = 2.dp),
                 )
             }

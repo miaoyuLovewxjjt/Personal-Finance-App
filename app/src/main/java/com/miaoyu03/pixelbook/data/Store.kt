@@ -79,6 +79,9 @@ class Store(context: Context) {
     private val catsRawCache = HashMap<String, String>()
     private val assetsRawCache = HashMap<String, String>()
     private val depRawCache = HashMap<String, String>()     // accountId → my_saving.json 原文
+    private val itemsRawCache = HashMap<String, String>()   // accountId → my_items.json 原文
+    private val workRawCache = HashMap<String, String>()    // accountId → my_work.json 原文
+    private val tasksRawCache = HashMap<String, String>()   // accountId → my_tasks.json 原文
     private val ledgerByIdCache = HashMap<String, Ledger>()
 
     init {
@@ -104,6 +107,31 @@ class Store(context: Context) {
     fun ensureStartupAccount(): Account? {
         val list = accounts()
         if (list.isEmpty()) {
+            // 索引为空但磁盘已有账户文件夹（索引文件损坏/丢失、整目录拷贝等）→ 按文件夹重建索引（自愈，数据不丢）
+            val folders = runCatching { io.listDirs() }.getOrDefault(emptyList())
+                .filter { it.isNotBlank() && it != "." && it != ".." }
+            val rebuilt = JSONArray()
+            for (f in folders) {
+                val files = runCatching { io.listDirRaw(f) }.getOrDefault(emptyList())
+                val looksAccount = files.contains(CATS_JSON) || files.contains(SAVING_JSON) ||
+                    files.contains(PAYMENT_JSON) || files.any { it.startsWith(LEDGER_FILE_PREFIX) }
+                if (!looksAccount) continue
+                rebuilt.put(JSONObject().apply {
+                    put("id", "a${newId()}"); put("name", f)
+                    put("created", LocalDate.now().toString()); put("folder", f); put("size", 0L)
+                })
+            }
+            if (rebuilt.length() > 0) {
+                safeIo { io.write(ACCOUNTS_JSON, rebuilt.toString()) }
+                accountRawCache = null
+                ledgerMetaCache.clear()
+                txCache.clear()
+                val first = accounts().firstOrNull()
+                first?.let { setCurrentAccountId(it.id) }
+                runCatching { toast("已按存储文件夹恢复 ${rebuilt.length()} 个账户") }
+                return first
+            }
+            // 完全空盘（全新安装）→ 自动创建「默认账户」
             val acc = addAccount(DEFAULT_ACCOUNT_NAME) ?: return null
             setCurrentAccountId(acc.id)
             return acc
@@ -127,6 +155,9 @@ class Store(context: Context) {
         private const val CATS_JSON = "my_choice.json"
         private const val SAVING_JSON = "my_saving.json"
         private const val PAYMENT_JSON = "my_payment.json"
+        private const val ITEMS_JSON = "my_items.json"          // 我的物品（账户级清单）
+        private const val WORK_JSON = "my_work.json"            // 职业档案（账户级）
+        private const val TASKS_JSON = "my_tasks.json"          // 任务列表（账户级）
         private const val LEDGER_FILE_PREFIX = "my_ledger_"
         private const val LEDGER_FILE_SUFFIX = ".json"
         // 旧版/过渡期文件名（normalize 识别、迁移用）
@@ -624,6 +655,8 @@ class Store(context: Context) {
             if (!existing.contains(CATS_JSON)) target.writeNamedRaw("$folder/$CATS_JSON", catsJson(IncomeCats.list, ExpenseCats.list))
             if (!existing.contains(SAVING_JSON)) target.writeNamedRaw("$folder/$SAVING_JSON", "[]")
             if (!existing.contains(PAYMENT_JSON)) target.writeNamedRaw("$folder/$PAYMENT_JSON", "[]")
+            if (!existing.contains(ITEMS_JSON)) target.writeNamedRaw("$folder/$ITEMS_JSON", "[]")
+            if (!existing.contains(TASKS_JSON)) target.writeNamedRaw("$folder/$TASKS_JSON", "[]")
         }
     }
 
@@ -727,6 +760,8 @@ class Store(context: Context) {
             io.writeNamedRaw("$folder/$CATS_JSON", catsJson(IncomeCats.list, ExpenseCats.list))
             io.writeNamedRaw("$folder/$SAVING_JSON", "[]")
             io.writeNamedRaw("$folder/$PAYMENT_JSON", "[]")
+            io.writeNamedRaw("$folder/$ITEMS_JSON", "[]")
+            io.writeNamedRaw("$folder/$TASKS_JSON", "[]")
         }
         appendAccountMeta(id, nm, folder)
         return Account(id, nm)
@@ -845,6 +880,9 @@ class Store(context: Context) {
         catsRawCache.remove(id)
         assetsRawCache.remove(id)
         depRawCache.remove(id)
+        itemsRawCache.remove(id)
+        workRawCache.remove(id)
+        tasksRawCache.remove(id)
         val arr = JSONArray()
         readAccountsRaw().forEach { if (it.optString("id") != id) arr.put(it) }
         safeIo { io.write(ACCOUNTS_JSON, arr.toString()) }
@@ -1371,6 +1409,153 @@ class Store(context: Context) {
         writeAccountDeps(accountId, accountDepList(accountId).filterNot { it.id == depId })
     }
 
+    /* ================= 我的物品（账户级 my_items.json） ================= */
+
+    /** 我的物品清单（账户一份） */
+    fun itemsOf(accountId: String): List<Item> {
+        val folder = folderOfAccount(accountId) ?: return emptyList()
+        val raw = itemsRawCache[accountId]
+            ?: io.readNamedRaw("$folder/$ITEMS_JSON")?.also { itemsRawCache[accountId] = it }
+            ?: return emptyList()
+        return runCatching { parseItems(raw) }.getOrDefault(emptyList())
+    }
+
+    private fun writeItems(accountId: String, list: List<Item>) {
+        val folder = folderOfAccount(accountId) ?: return
+        val arr = JSONArray()
+        list.forEach { arr.put(itemToJson(it)) }
+        val raw = arr.toString()
+        if (safeIo { io.writeNamedRaw("$folder/$ITEMS_JSON", raw) }) {
+            itemsRawCache[accountId] = raw
+        }
+    }
+
+    fun addItem(accountId: String, item: Item) {
+        writeItems(accountId, itemsOf(accountId).toMutableList().apply { add(item) })
+    }
+
+    fun updateItem(accountId: String, item: Item) {
+        writeItems(accountId, itemsOf(accountId).map { if (it.id == item.id) item else it })
+    }
+
+    fun deleteItem(accountId: String, itemId: String) {
+        writeItems(accountId, itemsOf(accountId).filterNot { it.id == itemId })
+    }
+
+    private fun itemToJson(it: Item): JSONObject = JSONObject().apply {
+        put("id", it.id); put("name", it.name); put("note", it.note)
+        put("buy", it.buyDate.toString()); put("created", it.createdAt); put("price", it.price)
+    }
+
+    private fun parseItems(s: String): List<Item> {
+        if (s.isEmpty()) return emptyList()
+        return runCatching {
+            val out = mutableListOf<Item>()
+            val arr = JSONArray(s)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    Item(
+                        id = o.getString("id"),
+                        name = o.optString("name", ""),
+                        note = o.optString("note", ""),
+                        buyDate = runCatching { LocalDate.parse(o.optString("buy", "")) }.getOrDefault(LocalDate.now()),
+                        createdAt = o.optString("created", ""),
+                        price = o.optLong("price", 0),
+                    )
+                )
+            }
+            out
+        }.getOrDefault(emptyList())
+    }
+
+    /* ================= 职业档案（账户级 my_work.json） ================= */
+
+    /** 职业档案（账户一份；未设置返回默认档案） */
+    fun workProfile(accountId: String): WorkProfile {
+        val folder = folderOfAccount(accountId) ?: return WorkProfile()
+        val raw = workRawCache[accountId]
+            ?: io.readNamedRaw("$folder/$WORK_JSON")?.also { workRawCache[accountId] = it }
+            ?: return WorkProfile()
+        return runCatching {
+            val o = JSONObject(raw)
+            val days = o.optJSONArray("days")?.let { a -> (0 until a.length()).map { a.getInt(it) } }
+            WorkProfile(
+                occupation = o.optString("occupation", ""),
+                monthlySalary = o.optLong("salary", 0),
+                workDays = days?.takeIf { it.isNotEmpty() } ?: listOf(1, 2, 3, 4, 5),
+                workStart = o.optString("start", "09:00"),
+                workEnd = o.optString("end", "18:00"),
+                commute = o.optString("commute", ""),
+            )
+        }.getOrDefault(WorkProfile())
+    }
+
+    fun setWorkProfile(accountId: String, p: WorkProfile): Boolean {
+        val folder = folderOfAccount(accountId) ?: return false
+        val raw = JSONObject().apply {
+            put("occupation", p.occupation); put("salary", p.monthlySalary)
+            put("days", JSONArray(p.workDays)); put("start", p.workStart)
+            put("end", p.workEnd); put("commute", p.commute)
+        }.toString()
+        return if (safeIo { io.writeNamedRaw("$folder/$WORK_JSON", raw) }) {
+            workRawCache[accountId] = raw
+            true
+        } else false
+    }
+
+    /* ================= 任务列表（账户级 my_tasks.json） ================= */
+
+    fun tasksOf(accountId: String): List<TaskItem> {
+        val folder = folderOfAccount(accountId) ?: return emptyList()
+        val raw = tasksRawCache[accountId]
+            ?: io.readNamedRaw("$folder/$TASKS_JSON")?.also { tasksRawCache[accountId] = it }
+            ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                runCatching {
+                    val o = arr.getJSONObject(i)
+                    TaskItem(
+                        id = o.getString("id"),
+                        text = o.optString("text", ""),
+                        done = o.optBoolean("done", false),
+                        created = o.optString("created", ""),
+                    )
+                }.getOrNull()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun writeTasks(accountId: String, list: List<TaskItem>) {
+        val folder = folderOfAccount(accountId) ?: return
+        val arr = JSONArray()
+        list.forEach {
+            arr.put(JSONObject().apply {
+                put("id", it.id); put("text", it.text); put("done", it.done); put("created", it.created)
+            })
+        }
+        val raw = arr.toString()
+        if (safeIo { io.writeNamedRaw("$folder/$TASKS_JSON", raw) }) {
+            tasksRawCache[accountId] = raw
+        }
+    }
+
+    fun addTask(accountId: String, text: String) {
+        val t = TaskItem(id = "k${newId()}", text = text.trim())
+        if (t.text.isEmpty()) return
+        writeTasks(accountId, tasksOf(accountId) + t)
+    }
+
+    /** 勾选/取消勾选任务（完成后可打对勾） */
+    fun toggleTask(accountId: String, taskId: String) {
+        writeTasks(accountId, tasksOf(accountId).map { if (it.id == taskId) it.copy(done = !it.done) else it })
+    }
+
+    fun deleteTask(accountId: String, taskId: String) {
+        writeTasks(accountId, tasksOf(accountId).filterNot { it.id == taskId })
+    }
+
     /* ================= 天气 / 每日预算（存数据包） ================= */
 
     fun weather(ledgerId: String, date: LocalDate): Weather? {
@@ -1597,6 +1782,9 @@ class Store(context: Context) {
             catsRawCache.clear()
             assetsRawCache.clear()
             depRawCache.clear()
+            itemsRawCache.clear()
+            workRawCache.clear()
+            tasksRawCache.clear()
             // 记录历史与上次结果
             val prev = cfg.getString(KEY_STORAGE_TREE, null)
             prev?.let {

@@ -900,6 +900,66 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 任务：对勾（草绿勾 + 深棕描边） ================= */
+    val check = Def("check", basePalette, listOf(
+"................",
+"................",
+".............GG.",
+"............GGGb",
+"...........GGGb.",
+"..........GGGb..",
+".........GGGb...",
+".b......GGGb....",
+".bGb...GGGb.....",
+"..bGb.GGGb......",
+"...bGbGGb.......",
+"....bGGGb.......",
+".....bGb........",
+"......b.........",
+"................",
+"................"
+    ))
+
+    /* ================= 职业：公文包（提手 + 木棕包身 + 暖黄锁扣） ================= */
+    val briefcase = Def("briefcase", basePalette, listOf(
+"................",
+"................",
+"......bbbb......",
+"......bNNb......",
+"..bbbbbbbbbbbb..",
+"..bNNNNNNNNNNb..",
+"..bNNNNNNNNNNb..",
+"..bNNNNyyNNNNb..",
+"..bNNNNyyNNNNb..",
+"..bNNNNNNNNNNb..",
+"..bNNNNNNNNNNb..",
+"..bNNNNNNNNNNb..",
+"..bbbbbbbbbbbb..",
+"................",
+"................",
+"................"
+    ))
+
+    /* ================= 我的物品：纸箱（盖面胶带 + 木棕箱身 + 侧棱） ================= */
+    val box = Def("box", basePalette, listOf(
+"................",
+"................",
+"................",
+"....bbbbbbbb....",
+".bNNNNNNNNNNNNb.",
+".bNNNNNyyNNNNNb.",
+"..bbbbbbbbbbbb..",
+".bNNNNNNNNNNNNb.",
+".bNnNNNNNNNNnNb.",
+".bNNNNNNNNNNNNb.",
+".bNnNNNNNNNNnNb.",
+".bNNNNNNNNNNNNb.",
+".bNnNNNNNNNNnNb.",
+"..bbbbbbbbbbbb..",
+"................",
+"................"
+    ))
+
     /* ================= 角色头像：短发男子（深棕短发 + 草绿上衣，星露谷风大头像） ================= */
     val avatarMan = Def("avatarMan", basePalette, listOf(
         "................",
@@ -974,6 +1034,8 @@ object PixelIcons {
         "windy" -> windy; "statChart" -> statChart
         "gear" -> gear; "export" -> export
         "avatarMan" -> avatarMan; "avatarWoman" -> avatarWoman
+        "box" -> box
+        "check" -> check; "briefcase" -> briefcase
         else -> dots
     }
 
