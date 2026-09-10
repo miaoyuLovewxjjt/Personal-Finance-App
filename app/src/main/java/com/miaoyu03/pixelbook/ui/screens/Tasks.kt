@@ -103,7 +103,7 @@ fun TodayTasksSection(
                 Spacer(Modifier.width(8.dp))
                 PxText("我的任务", size = 15.sp, color = Px.Brown)
                 Spacer(Modifier.weight(1f))
-                PxText("全部任务 ▸", size = 11.sp, color = Px.GrayText)
+                PxText("全部任务", size = 11.sp, color = Px.GrayText)
                 Spacer(Modifier.width(6.dp))
                 // 折叠箭头：展开态 ▶（点击收起）/ 折叠态 ▼（点击展开）；独立热区不触发整行跳转
                 Box(
