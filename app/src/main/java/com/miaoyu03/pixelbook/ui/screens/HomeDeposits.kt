@@ -156,7 +156,7 @@ fun HomeScreen(
                                 .padding(horizontal = 22.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            PxText("我的记账", size = 16.sp, color = Px.Brown)
+                            PxText("我的记账", size = 15.sp, color = Px.Brown)
                             Spacer(Modifier.weight(1f))
                             PxText("${ledgers.size} / ${com.miaoyu03.pixelbook.data.MAX_LEDGER_PER_ACCOUNT}", size = 11.sp, color = Px.GrayText)
                         }
@@ -174,7 +174,7 @@ fun HomeScreen(
                     if (ledgers.isEmpty()) {
                         item {
                             Spacer(Modifier.height(30.dp))
-                            PxText("该账户还没有账本，点击下方按钮新建", size = 13.sp, color = Px.GrayText)
+                            PxText("该账户还没有账本，点击下方按钮新建", size = 11.sp, color = Px.GrayText)
                         }
                     }
                     item { Spacer(Modifier.height(16.dp)) }
@@ -306,7 +306,7 @@ private fun LedgerCard(
             // 封面图标：手绘账本（马赛克硬边）
             PixelIcon("ledger", size = 44.dp)
             Spacer(Modifier.width(12.dp))
-            PxText(ledger.name, size = 16.sp, maxLines = 2, modifier = Modifier.weight(1f))
+            PxText(ledger.name, size = 14.sp, maxLines = 2, modifier = Modifier.weight(1f))
             // 右侧：编辑（铅笔）在前、删除（垃圾桶）在后
             PixelIconButton(icon = "pencil", size = 26.dp, bg = Px.CreamDark, onClick = onEdit, desc = "编辑账本")
             Spacer(Modifier.width(4.dp))

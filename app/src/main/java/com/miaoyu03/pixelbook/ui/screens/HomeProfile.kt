@@ -102,7 +102,7 @@ fun ProfileCard(
                         Spacer(Modifier.width(4.dp))
                         PxText(
                             occ.ifEmpty { "设置职业" },
-                            size = 12.sp,
+                            size = 11.sp,
                             color = if (occ.isEmpty()) Px.GrayText else Px.WoodDark,
                             modifier = Modifier
                                 .clickable(onClick = onOpenWork)
@@ -111,7 +111,7 @@ fun ProfileCard(
                     }
                     if (account.birthday.isNotEmpty()) {
                         Spacer(Modifier.height(3.dp))
-                        PxText("生日 · ${account.birthday}", size = 12.sp, color = Px.GrayText)
+                        PxText("生日 · ${account.birthday}", size = 11.sp, color = Px.GrayText)
                     }
                     if (account.note.isNotEmpty()) {
                         Spacer(Modifier.height(3.dp))
@@ -181,18 +181,18 @@ fun ProfileCard(
                     if (orderedCats.isEmpty()) {
                         PxText(
                             "还没有资产记录，点左侧「我的资产」添加",
-                            size = 12.sp, color = Px.GrayText,
+                            size = 11.sp, color = Px.GrayText,
                             modifier = Modifier.padding(vertical = 10.dp),
                         )
                     } else {
                         orderedCats.forEach { (cat, amt) ->
                             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                 PxText(
-                                    cat.ifEmpty { "未分类" }, size = 13.sp, color = Px.Brown,
+                                    cat.ifEmpty { "未分类" }, size = 14.sp, color = Px.Brown,
                                     modifier = Modifier.weight(1f),
                                 )
                                 PxText(
-                                    Fmt.yen(amt), size = 13.sp, color = Px.WoodDark,
+                                    Fmt.yen(amt), size = 14.sp, color = Px.WoodDark,
                                     align = TextAlign.End, modifier = Modifier.width(104.dp),
                                 )
                             }
@@ -203,9 +203,9 @@ fun ProfileCard(
                     Spacer(Modifier.height(6.dp))
                     // 总资产价值（类别名栏 + 金额大字）
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        PxText("总资产价值", size = 13.sp, color = Px.GrayText, modifier = Modifier.weight(1f))
+                        PxText("总资产价值", size = 11.sp, color = Px.GrayText, modifier = Modifier.weight(1f))
                         PxText(
-                            Fmt.yen(total), size = 17.sp, color = Px.Brown,
+                            Fmt.yen(total), size = 14.sp, color = Px.Brown,
                             align = TextAlign.End, modifier = Modifier.width(104.dp),
                         )
                     }

@@ -77,6 +77,7 @@ fun TodayTasksSection(
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var deleting by remember { mutableStateOf<TaskItem?>(null) }
+    var collapsed by remember { mutableStateOf(false) }   // 折叠：仅保留「我的任务」标题行
     val today = LocalDate.now()
     val tasks = remember(accountId, refreshKey) { store.tasksOn(accountId, today) }
     val doneCount = tasks.count { it.done }
@@ -103,13 +104,32 @@ fun TodayTasksSection(
                 PxText("我的任务", size = 15.sp, color = Px.Brown)
                 Spacer(Modifier.weight(1f))
                 PxText("全部任务 ▸", size = 11.sp, color = Px.GrayText)
+                Spacer(Modifier.width(6.dp))
+                // 折叠箭头：展开态 ▶（点击收起）/ 折叠态 ▼（点击展开）；独立热区不触发整行跳转
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                            onClick = { collapsed = !collapsed },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PixelIcon(
+                        if (collapsed) "chevronD" else "chevronR",
+                        size = 14.dp,
+                        desc = if (collapsed) "展开今日任务" else "收起今日任务",
+                    )
+                }
             }
+            if (!collapsed) {
             Spacer(Modifier.height(6.dp))
             TaskDivider()
             Spacer(Modifier.height(6.dp))
             // 今日任务列表（无左侧图标；标题 + 小字备注 + 编辑/删除）
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PxText("今日任务列表", size = 14.sp, color = Px.Brown)
+                PxText("今日任务列表", size = 15.sp, color = Px.Brown)
                 Spacer(Modifier.weight(1f))
                 PxText("$doneCount / ${tasks.size}", size = 11.sp, color = Px.GrayText)
                 Spacer(Modifier.width(8.dp))
@@ -118,7 +138,7 @@ fun TodayTasksSection(
             }
             if (tasks.isEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                PxText("今天暂无任务，点右上「＋」新增", size = 12.sp, color = Px.GrayText)
+                PxText("今天暂无任务，点右上「＋」新增", size = 11.sp, color = Px.GrayText)
             } else {
                 Spacer(Modifier.height(4.dp))
                 tasks.forEach { t ->
@@ -130,6 +150,7 @@ fun TodayTasksSection(
                         onDelete = { deleting = t },
                     )
                 }
+            }
             }
         }
     }
@@ -439,7 +460,7 @@ private fun TaskRow(
         Column(modifier = Modifier.weight(1f)) {
             PxText(
                 task.text,
-                size = 13.sp,
+                size = 14.sp,
                 color = if (task.done) Px.GrayText else Px.Brown,
             )
             if (task.note.isNotEmpty()) {
