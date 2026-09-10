@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -453,8 +456,14 @@ fun PixelDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        // 整体避让软键盘：键盘弹出时对话框收缩到键盘上方的可视区，不遮挡输入框
-        Box(modifier = Modifier.fillMaxSize().imePadding()) {
+        // 整体避让软键盘：Dialog 窗口默认不接收 IME insets，imePadding 在部分设备/模拟器上失效，
+        // 这里叠加 WindowInsets.ime 显式 padding（双保险），保证 footer 的保存/取消按钮不被键盘遮挡
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+                .windowInsetsPadding(WindowInsets.ime),
+        ) {
             // 背景 scrim：只在面板外点击时关闭
             Box(
                 modifier = Modifier
