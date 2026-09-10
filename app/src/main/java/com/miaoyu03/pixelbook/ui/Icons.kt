@@ -900,6 +900,26 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 任务卷轴（星露谷风：上下木轴 + 羊皮纸 + 三行文字线） ================= */
+    val taskScroll = Def("taskScroll", basePalette, listOf(
+"................",
+".bbbbbbbbbbbbbb.",
+".bNNNNNNNNNNNNb.",
+".bbbbbbbbbbbbbb.",
+"..bwwwwwwwwwwb..",
+"..bwbbbwwwwwwb..",
+"..bwwwwwwwwwwb..",
+"..bwbbbbbwwwwb..",
+"..bwwwwwwwwwwb..",
+"..bwbbbwwwwwwb..",
+"..bwwwwwwwwwwb..",
+"..bwwwwwwwwwwb..",
+".bbbbbbbbbbbbbb.",
+".bNNNNNNNNNNNNb.",
+".bbbbbbbbbbbbbb.",
+"................"
+    ))
+
     /* ================= 任务：对勾（草绿勾 + 深棕描边） ================= */
     val check = Def("check", basePalette, listOf(
 "................",
@@ -1035,7 +1055,7 @@ object PixelIcons {
         "gear" -> gear; "export" -> export
         "avatarMan" -> avatarMan; "avatarWoman" -> avatarWoman
         "box" -> box
-        "check" -> check; "briefcase" -> briefcase
+        "check" -> check; "briefcase" -> briefcase; "taskScroll" -> taskScroll
         else -> dots
     }
 

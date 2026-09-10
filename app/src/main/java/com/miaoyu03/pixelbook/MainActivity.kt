@@ -30,6 +30,7 @@ import com.miaoyu03.pixelbook.ui.screens.HomeScreen
 import com.miaoyu03.pixelbook.ui.screens.MonthScreen
 import com.miaoyu03.pixelbook.ui.screens.MyItemsScreen
 import com.miaoyu03.pixelbook.ui.screens.StartScreen
+import com.miaoyu03.pixelbook.ui.screens.TasksScreen
 import com.miaoyu03.pixelbook.ui.screens.WorkScreen
 import com.miaoyu03.pixelbook.ui.screens.YearScreen
 import java.time.LocalDate
@@ -42,6 +43,7 @@ sealed class Screen {
     data class Assets(val accountId: String) : Screen()            // 资产账户信息维护
     data class MyItems(val accountId: String) : Screen()           // 我的物品（持有物清单）
     data class Work(val accountId: String) : Screen()              // 职业（个人收入形象卡）
+    data class Tasks(val accountId: String) : Screen()             // 我的任务（全部任务列表 + 日期导航）
     data class Detail(val ledgerId: String) : Screen()
     data class Entry(val ledgerId: String, val date: LocalDate) : Screen()
     data class Month(val ledgerId: String, val ym: String) : Screen()
@@ -96,6 +98,7 @@ fun PixelBookApp() {
                 onOpenAssets = { stack.add(Screen.Assets(it)) },
                 onOpenItems = { stack.add(Screen.MyItems(it)) },
                 onOpenWork = { stack.add(Screen.Work(it)) },
+                onOpenTasks = { stack.add(Screen.Tasks(it)) },
             )
             is Screen.AccountDeposits -> AccountDepositsScreen(
                 store = store,
@@ -113,6 +116,11 @@ fun PixelBookApp() {
                 onBack = { stack.removeAt(stack.lastIndex) },
             )
             is Screen.Work -> WorkScreen(
+                store = store,
+                accountId = top.accountId,
+                onBack = { stack.removeAt(stack.lastIndex) },
+            )
+            is Screen.Tasks -> TasksScreen(
                 store = store,
                 accountId = top.accountId,
                 onBack = { stack.removeAt(stack.lastIndex) },

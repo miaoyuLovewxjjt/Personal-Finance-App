@@ -1519,7 +1519,10 @@ class Store(context: Context) {
                     TaskItem(
                         id = o.getString("id"),
                         text = o.optString("text", ""),
+                        note = o.optString("note", ""),
                         done = o.optBoolean("done", false),
+                        // 旧数据无 date → 用创建日期兜底（兼容）
+                        date = o.optString("date", "").ifEmpty { o.optString("created", "") },
                         created = o.optString("created", ""),
                     )
                 }.getOrNull()
@@ -1527,12 +1530,25 @@ class Store(context: Context) {
         }.getOrDefault(emptyList())
     }
 
+    /** 某天的任务（列表按未完成在前、完成在后，同级按创建顺序） */
+    fun tasksOn(accountId: String, date: LocalDate): List<TaskItem> {
+        val d = date.toString()
+        return tasksOf(accountId).filter { it.date == d }
+            .sortedWith(compareBy({ it.done }, { it.created }))
+    }
+
+    /** 有任务的日期（倒序；用于左导航） */
+    fun taskDates(accountId: String): List<LocalDate> =
+        tasksOf(accountId).mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }
+            .distinct().sortedDescending()
+
     private fun writeTasks(accountId: String, list: List<TaskItem>) {
         val folder = folderOfAccount(accountId) ?: return
         val arr = JSONArray()
         list.forEach {
             arr.put(JSONObject().apply {
-                put("id", it.id); put("text", it.text); put("done", it.done); put("created", it.created)
+                put("id", it.id); put("text", it.text); put("note", it.note)
+                put("done", it.done); put("date", it.date); put("created", it.created)
             })
         }
         val raw = arr.toString()
@@ -1541,10 +1557,16 @@ class Store(context: Context) {
         }
     }
 
-    fun addTask(accountId: String, text: String) {
-        val t = TaskItem(id = "k${newId()}", text = text.trim())
+    /** 新增任务（date 为所选日期，默认今天；标题 ≤15、备注 ≤60 由 UI 截断） */
+    fun addTask(accountId: String, text: String, note: String = "", date: LocalDate = LocalDate.now()) {
+        val t = TaskItem(id = "k${newId()}", text = text.trim(), note = note.trim(), date = date.toString())
         if (t.text.isEmpty()) return
         writeTasks(accountId, tasksOf(accountId) + t)
+    }
+
+    /** 编辑任务（标题/备注/日期） */
+    fun updateTask(accountId: String, task: TaskItem) {
+        writeTasks(accountId, tasksOf(accountId).map { if (it.id == task.id) task else it })
     }
 
     /** 勾选/取消勾选任务（完成后可打对勾） */

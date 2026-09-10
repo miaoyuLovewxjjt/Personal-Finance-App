@@ -85,6 +85,7 @@ fun HomeScreen(
     onOpenAssets: (String) -> Unit,
     onOpenItems: (String) -> Unit,   // 我的物品（持有物清单）
     onOpenWork: (String) -> Unit,    // 职业（个人收入形象卡）
+    onOpenTasks: (String) -> Unit,   // 我的任务（全部任务列表）
 ) {
     var tick by remember { mutableIntStateOf(0) }
     var showNewLedger by remember { mutableStateOf(false) }
@@ -138,11 +139,12 @@ fun HomeScreen(
                     item { Spacer(Modifier.height(18.dp)) }
                     // 任务列表（我的账本上方；可新增、完成后打对勾）
                     item {
-                        TaskListSection(
+                        TodayTasksSection(
                             store = store,
                             accountId = account.id,
                             refreshKey = tick,        // 读取 tick：任务增删/勾选后 item 正确重组
                             onChange = { tick++ },
+                            onOpenAll = { onOpenTasks(account.id) },
                         )
                     }
                     item { Spacer(Modifier.height(18.dp)) }
@@ -1116,122 +1118,4 @@ fun depCatColor(cat: String): Color = when (cat) {
     DepositCats.STOCK -> Px.SkyDark
     DepositCats.FUND -> Px.WoodDark
     else -> Px.GrayText
-}
-
-
-/* ================================================================
- * 任务列表（账户级）：我的账本上方区块
- *  - 顶部：标题「任务列表」+ 计数 + ＋ 新增（弹窗输入）
- *  - 每行：对勾按钮（完成打勾/取消）+ 任务文字（完成态灰字删除线感）+ 删除
- * ================================================================ */
-
-@Composable
-private fun TaskListSection(
-    store: Store,
-    accountId: String,
-    refreshKey: Int,
-    onChange: () -> Unit,
-) {
-    var showAdd by remember { mutableStateOf(false) }
-    val tasks = remember(accountId, refreshKey) { store.tasksOf(accountId) }
-    val doneCount = tasks.count { it.done }
-
-    PixelPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp),
-        bg = Px.Cream,
-        contentPadding = 12.dp,
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("check", size = 18.dp)
-                Spacer(Modifier.width(6.dp))
-                PxText("任务列表", size = 15.sp, color = Px.Brown)
-                Spacer(Modifier.weight(1f))
-                PxText("$doneCount / ${tasks.size}", size = 11.sp, color = Px.GrayText)
-                Spacer(Modifier.width(8.dp))
-                PixelIconButton(icon = "plus", size = 28.dp, bg = Px.Yellow, onClick = { showAdd = true }, desc = "新增任务")
-            }
-            if (tasks.isEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                PxText("暂无任务，点右上「＋」新增", size = 12.sp, color = Px.GrayText)
-            } else {
-                Spacer(Modifier.height(6.dp))
-                tasks.forEach { t ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // 对勾按钮：完成态草绿描边 + 对勾图标；未完成态空框
-                        Box(
-                            modifier = Modifier
-                                .size(26.dp)
-                                .background(if (t.done) Px.Grass.copy(alpha = 0.3f) else Px.CreamBg)
-                                .clickable {
-                                    store.toggleTask(accountId, t.id)
-                                    onChange()
-                                }
-                                .drawBehind {
-                                    drawRect(
-                                        if (t.done) Px.Grass else Px.Brown,
-                                        style = Stroke(if (t.done) 2.5.dp.toPx() else 2.dp.toPx()),
-                                    )
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (t.done) PixelIcon("check", size = 16.dp)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        PxText(
-                            t.text,
-                            size = 13.sp,
-                            color = if (t.done) Px.GrayText else Px.Brown,
-                            modifier = Modifier.weight(1f),
-                        )
-                        PixelIconButton(
-                            icon = "trash", size = 24.dp, bg = Px.CreamDark,
-                            onClick = {
-                                store.deleteTask(accountId, t.id)
-                                onChange()
-                            },
-                            desc = "删除任务",
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    if (showAdd) {
-        var text by remember { mutableStateOf("") }
-        PixelDialog(
-            title = "新增任务",
-            onDismiss = { showAdd = false },
-            footer = {
-                PixelButton("取消", { showAdd = false }, bg = Px.Wood, height = 40.dp, modifier = Modifier.width(110.dp))
-                PixelButton(
-                    "添加",
-                    {
-                        if (text.trim().isEmpty()) { store.toast("请输入任务内容"); return@PixelButton }
-                        store.addTask(accountId, text)
-                        showAdd = false
-                        onChange()
-                    },
-                    bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
-                )
-            },
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                PxText("任务内容", size = 12.sp, color = Px.GrayText)
-                Spacer(Modifier.height(4.dp))
-                PixelTextField(
-                    value = text,
-                    onValueChange = { text = Fmt.clip(it, com.miaoyu03.pixelbook.data.MAX_TASK_LEN) },
-                    placeholder = "如：交房租、对账",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-    }
 }

@@ -114,11 +114,13 @@ data class WorkProfile(
     val commute: String = "",              // 通勤路线
 )
 
-/** 任务列表条目（账户级） */
+/** 任务条目（账户级；date = 任务归属日期，今天/历史都可增删改） */
 data class TaskItem(
     val id: String,
-    val text: String,
+    val text: String,                          // 任务标题（≤15 字）
+    val note: String = "",                     // 备注（≤60 字，小字浅色展示）
     val done: Boolean = false,
+    val date: String = LocalDate.now().toString(),   // 任务日期 yyyy-MM-dd
     val created: String = LocalDate.now().toString(),
 )
 
@@ -138,7 +140,8 @@ const val MAX_ACCOUNT_NOTE_LEN = 60          // 账户备注：最多 60 字（�
 const val MAX_ITEM_NAME_LEN = 25             // 物品名称：最多 25 字
 const val MAX_OCCUPATION_LEN = 10            // 职业名：最多 10 字
 const val MAX_COMMUTE_LEN = 30               // 通勤路线：最多 30 字
-const val MAX_TASK_LEN = 40                  // 任务内容：最多 40 字
+const val MAX_TASK_LEN = 15                  // 任务标题：最多 15 字
+const val MAX_TASK_NOTE_LEN = 60             // 任务备注：最多 60 字
 const val MAX_LEDGER_PER_ACCOUNT = 60        // 每个账户下最多账本数
 
 /** 旧数据迁移时创建的默认账户名 */
