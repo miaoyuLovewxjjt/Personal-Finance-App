@@ -397,7 +397,7 @@ fun YearScreen(
                             .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        PixelIcon("calendar", size = 18.dp)
+                        PixelIcon("calendar", size = 24.dp)
                         Spacer(Modifier.width(6.dp))
                         PxText("${year}年 月份", size = 15.sp, color = Px.Brown)
                         Spacer(Modifier.weight(1f))

@@ -48,7 +48,7 @@ import com.miaoyu03.pixelbook.ui.PxText
 
 /* ================================================================
  * 目录页角色面板：
- *  ① 角色形象（短发男子 / 长发女子）+ 账户名 + 生日 + 备注 + 红铅笔编辑
+ *  ① 角色形象（短发男子 / 长发女子）+ 账户名 + 生日 + 备注 + 铅笔编辑
  *  ② 我的钱包（图标装饰 + 文字可点击 → 我的钱包页）
  *  ③ 我的资产（图标装饰 + 文字可点击 → 我的资产页）+ 类别金额 + 总资产价值
  * 规则：可跳转项 = 图标 + 文字，点击文字跳转，图标仅为装饰。
@@ -89,9 +89,9 @@ fun ProfileCard(
             androidx.compose.material3.LocalMinimumInteractiveComponentEnforcement provides false,
         ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // ① 角色头部：头像 + 账户名/生日/备注 + 右上红铅笔
+            // ① 角色头部：头像 + 账户名/生日/备注 + 右上铅笔编辑
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon(if (account.avatar == 1) "avatarWoman" else "avatarMan", size = 52.dp)
+                PixelIcon(if (account.avatar == 1) "avatarWoman" else "avatarMan", size = 60.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     PxText(account.name, size = 17.sp, color = Px.Brown, maxLines = 1)
@@ -122,7 +122,7 @@ fun ProfileCard(
                     }
                 }
                 PixelIconButton(
-                    icon = "pencil", size = 34.dp, bg = Px.Red,
+                    icon = "pencilTitle", size = 34.dp, bg = Px.CreamDark,
                     onClick = onEditProfile, desc = "编辑资料",
                 )
             }
@@ -131,7 +131,7 @@ fun ProfileCard(
             Spacer(Modifier.height(2.dp))
             // ② 我的钱包（图标装饰 + 文字可点击 → 我的钱包页；与资产入口同款图标/字号）
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("bankCard", size = 22.dp)
+                PixelIcon("bankCard", size = 28.dp)
                 Spacer(Modifier.width(8.dp))
                 PxText(
                     "我的钱包", size = 15.sp, color = Px.Brown,
@@ -145,7 +145,7 @@ fun ProfileCard(
             Spacer(Modifier.height(2.dp))
             // ②b 我的物品（纸箱图标装饰 + 文字可点击 → 我的物品页；与钱包入口同款）
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("box", size = 22.dp)
+                PixelIcon("box", size = 28.dp)
                 Spacer(Modifier.width(8.dp))
                 PxText(
                     "我的物品", size = 15.sp, color = Px.Brown,
@@ -164,11 +164,11 @@ fun ProfileCard(
                 Column(
                     modifier = Modifier
                         .clickable(onClick = onOpenSaving)
-                        .width(22.dp)
+                        .width(28.dp)
                         .padding(vertical = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    PixelIcon("chest", size = 22.dp)
+                    PixelIcon("chest", size = 28.dp)
                     Spacer(Modifier.height(2.dp))
                     PxText("我", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
                     PxText("的", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
@@ -302,7 +302,7 @@ fun ProfileDialog(
 private fun AvatarOption(index: Int, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .size(56.dp)
+            .size(68.dp)
             .background(if (selected) Px.Grass.copy(alpha = 0.25f) else Px.CreamBg)
             .clickable(onClick = onClick)
             .drawBehind {
@@ -314,6 +314,6 @@ private fun AvatarOption(index: Int, selected: Boolean, onClick: () -> Unit) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        PixelIcon(if (index == 1) "avatarWoman" else "avatarMan", size = 42.dp)
+        PixelIcon(if (index == 1) "avatarWoman" else "avatarMan", size = 56.dp)
     }
 }

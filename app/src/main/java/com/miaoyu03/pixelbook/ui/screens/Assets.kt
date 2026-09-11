@@ -293,7 +293,7 @@ private fun AssetListPane(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PixelIcon("coinPile", size = 24.dp)
+            PixelIcon("balance", size = 32.dp)
             Spacer(Modifier.width(8.dp))
             PxText("余额一览", size = 17.sp)
             Spacer(Modifier.weight(1f))
@@ -303,7 +303,7 @@ private fun AssetListPane(
         if (assets.isEmpty()) {
             Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    PixelIcon("coinPile", size = 48.dp)
+                    PixelIcon("balance", size = 56.dp)
                     Spacer(Modifier.height(8.dp))
                     PxText("还没有资产账户", size = 14.sp, color = Px.GrayText)
                     Spacer(Modifier.height(4.dp))
@@ -321,7 +321,7 @@ private fun AssetListPane(
                                 .padding(horizontal = 18.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            PixelIcon(sourceIcon(cat), size = 20.dp)
+                            PixelIcon(sourceIcon(cat), size = 24.dp)
                             Spacer(Modifier.width(6.dp))
                             PxText(cat, size = 15.sp, color = Px.Wood)
                             Spacer(Modifier.weight(1f))
@@ -564,7 +564,7 @@ private fun DailyFlowPane(
                 .padding(top = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PixelIcon("calendarCute", size = 20.dp)
+            PixelIcon("calendarCute", size = 26.dp)
             Spacer(Modifier.width(6.dp))
             PxText(Fmt.dateFull(selectedDate), size = 16.sp)
         }

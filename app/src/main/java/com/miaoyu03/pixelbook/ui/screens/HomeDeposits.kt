@@ -304,7 +304,7 @@ private fun LedgerCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 封面图标：手绘账本（马赛克硬边）
-            PixelIcon("ledger", size = 44.dp)
+            PixelIcon("ledger", size = 48.dp)
             Spacer(Modifier.width(12.dp))
             PxText(ledger.name, size = 14.sp, maxLines = 2, modifier = Modifier.weight(1f))
             // 右侧：编辑（铅笔）在前、删除（垃圾桶）在后
@@ -605,7 +605,7 @@ private fun AccountDepositFormDialog(
                     ) {
                         PxText(Fmt.dateYmd(date), size = 13.sp)
                         Spacer(Modifier.weight(1f))
-                        PixelIcon("calendar", size = 18.dp)
+                        PixelIcon("calendar", size = 24.dp)
                     }
                 }
             }

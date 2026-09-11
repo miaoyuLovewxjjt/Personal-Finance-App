@@ -98,7 +98,7 @@ fun MyItemsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    PixelIcon("box", size = 30.dp)
+                    PixelIcon("box", size = 34.dp)
                     Spacer(Modifier.width(8.dp))
                     PxText("总价值 ${Fmt.yen(total)}", size = 16.sp)
                 }
@@ -189,7 +189,7 @@ private fun ItemRow(
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("box", size = 26.dp)
+                PixelIcon("box", size = 30.dp)
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     PxText(item.name.ifEmpty { "（未命名）" }, size = 14.sp)
@@ -295,7 +295,7 @@ private fun ItemFormDialog(
                 ) {
                     PxText(Fmt.dateYmd(buyDate), size = 13.sp)
                     Spacer(Modifier.weight(1f))
-                    PixelIcon("calendar", size = 18.dp)
+                    PixelIcon("calendar", size = 24.dp)
                 }
             }
             Spacer(Modifier.height(10.dp))

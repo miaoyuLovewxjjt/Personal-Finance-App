@@ -215,7 +215,7 @@ fun DetailScreen(
                         ) {
                             PixelIconButton(
                                 icon = "calendarCute",
-                                size = 30.dp,
+                                size = 36.dp,
                                 bg = Px.Cream,
                                 onClick = { showCal = true },
                                 desc = "日历",
@@ -746,8 +746,13 @@ private fun TxSectionHeader(title: String, icon: String, color: Color, sum: Long
             .padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PixelIcon(icon, size = 16.dp)
-        Spacer(Modifier.width(5.dp))
+        Box(
+            modifier = Modifier.size(26.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            PixelIcon(icon, size = 26.dp)
+        }
+        Spacer(Modifier.width(7.dp))
         PxText(title, size = 14.sp, color = color)
         Spacer(Modifier.weight(1f))
         PxText(Fmt.yen(sum), size = 13.sp, color = color)
@@ -1095,7 +1100,7 @@ fun EntryScreen(
                         .padding(4.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    PixelIcon("calendar", size = 20.dp, desc = "选择日期")
+                    PixelIcon("calendar", size = 26.dp, desc = "选择日期")
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -1352,8 +1357,13 @@ private fun EntryTabButton(
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            PixelIcon(icon, size = 18.dp)
-            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier.size(26.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                PixelIcon(icon, size = 26.dp)
+            }
+            Spacer(Modifier.width(8.dp))
             PxText(label, size = 14.sp, color = if (active) Px.GrassDark else Px.Brown)
         }
     }

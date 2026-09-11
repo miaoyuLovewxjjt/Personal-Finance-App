@@ -99,7 +99,7 @@ fun TodayTasksSection(
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                PixelIcon("taskScroll", size = 22.dp)
+                PixelIcon("taskScroll", size = 28.dp)
                 Spacer(Modifier.width(8.dp))
                 PxText("我的任务", size = 15.sp, color = Px.Brown)
                 Spacer(Modifier.weight(1f))
@@ -244,7 +244,7 @@ fun TasksScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             PixelIconButton(
-                                icon = "calendarCute", size = 30.dp, bg = Px.Cream,
+                                icon = "calendarCute", size = 36.dp, bg = Px.Cream,
                                 onClick = { showCal = true }, desc = "选择日期",
                             )
                         }
@@ -546,7 +546,7 @@ private fun TaskFormDialog(
                 ) {
                     PxText(Fmt.dateYmd(date), size = 13.sp)
                     Spacer(Modifier.weight(1f))
-                    PixelIcon("calendar", size = 18.dp)
+                    PixelIcon("calendar", size = 24.dp)
                 }
             }
             Spacer(Modifier.height(10.dp))

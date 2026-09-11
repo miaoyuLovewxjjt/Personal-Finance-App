@@ -112,18 +112,34 @@ val LocalLedgerFont = androidx.compose.runtime.staticCompositionLocalOf<androidx
 /* ---------------- 图标 ---------------- */
 
 /**
- * 手绘图标映射（用户手绘 → drawable 资源）。命中的图标直接用位图绘制（按 dp 缩放），
+ * UI_demo 图标映射。资源都整理为同一方形画布，命中的图标按调用方给定的 dp 缩放，
  * 未命中的回退到 16x16 像素字符画 PixelIcons。
  */
 val handDrawnIcons: Map<String, Int> = mapOf(
-    "trash" to R.drawable.ic_px_trash,
-    "back" to R.drawable.ic_px_back,
-    "gear" to R.drawable.ic_px_gear,
-    "calendarCute" to R.drawable.ic_px_calendar,
-    "chest" to R.drawable.ic_px_chest,
-    "bankCard" to R.drawable.ic_px_wallet,
-    "idcard" to R.drawable.ic_px_account,
-    "ledger" to R.drawable.ic_px_ledger,
+    "trash" to R.drawable.ui_delete_body,
+    "trashTitle" to R.drawable.ui_delete_title,
+    "back" to R.drawable.ui_back,
+    "calendar" to R.drawable.ui_calendar,
+    "calendarCute" to R.drawable.ui_calendar,
+    "chest" to R.drawable.ui_chest,
+    "bankCard" to R.drawable.ui_wallet,
+    "ledger" to R.drawable.ui_ledger,
+    "taskScroll" to R.drawable.ui_tasks,
+    "box" to R.drawable.ui_bag,
+    "export" to R.drawable.ui_export_pdf,
+    "avatarMan" to R.drawable.ui_avatar_man,
+    "avatarWoman" to R.drawable.ui_avatar_woman,
+    "coin" to R.drawable.ui_coin,
+    "balance" to R.drawable.ui_balance,
+    "income" to R.drawable.ui_income,
+    "expense" to R.drawable.ui_expense,
+    "sun" to R.drawable.ui_weather_sunny,
+    "cloud" to R.drawable.ui_weather_cloudy,
+    "rain" to R.drawable.ui_weather_rain,
+    "snow" to R.drawable.ui_weather_snow,
+    "windy" to R.drawable.ui_weather_wind,
+    "pencil" to R.drawable.ui_edit_body,
+    "pencilTitle" to R.drawable.ui_edit_title,
 )
 
 @Composable
@@ -288,7 +304,9 @@ fun PixelIconButton(
             .then(if (desc != null) Modifier.semantics { this.contentDescription = desc } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        PixelIcon(icon, size = btnSize * 0.6f)
+        // 资源图标本身带有少量透明留白，按钮内使用更充足的绘制区域，
+        // 让铅笔、日历、返回等图标的可见主体与按钮文字保持同一视觉尺度。
+        PixelIcon(icon, size = btnSize * 0.72f)
     }
 }
 
