@@ -1,0 +1,9 @@
+# 首页局部样式修订
+
+素材：`app/src/main/res/drawable-nodpi/home_details.png`，由内置 image_gen 编辑生成。原始 `home_farm.png` 保留不变。首页仅采样标题、小鸟、四块木牌区域，其余场景仍绘制原图，原来的缩放和热区位置不变。
+
+文字直接叠在空白木纹上，没有文字底色或贴纸。start、祝福、账号文字使用 App 的 Zpix 字体；木牌文字与像素心形、齿轮统一为深咖色 `#503019`。账号入口位于原图 `(340, 1160)`，宽 216、高 54，与下拉菜单同宽。
+
+## 生成提示词
+
+Use case: precise-object-edit. Input 1 is the EDIT TARGET (948x1659 pixel farm homepage), input 2 is STYLE REFERENCE only. Strict localized edit; preserve original exact composition, dimensions, pixel grid, ALL house, NPC, cow, cat, lake, mountains, flowers, grass, sky and path pixels outside requested objects. Do not restyle the whole image. ONLY edits: (1) Title at original x145..815 y190..445: replace thick wooden plaque-style logo with the reference's free-standing cream/golden Chinese characters 四季记账, warm terracotta brown pixel outline and small offset dimensional shadow, reference glyph shapes, four separate legible characters, leaf on left and small pink flower on right, no wooden backdrop. Keep title in its ORIGINAL overall location and footprint in input1, don't move it to reference location. (2) Four existing roadside boards at exact original positions x592..856 y977..1057; x563..877 y1067..1147; x563..877 y1152..1232; x624..821 y1241..1321. Recolor ONLY board surfaces to warm ochre honey wood as reference, rich coherent horizontal pixel wood grain, edge shading, visible nails, no central sticker/label rectangles. REMOVE ALL EXISTING LETTERS AND SYMBOLS from ALL FOUR planks, leaving continuous BLANK WOOD because app code will draw all lettering and icons. Preserve board outline/position/size and original post. (3) Add one small white/gray pixel sparrow with dark outline facing left perched on TOP plank near right end, entirely in x775..847 y924..980. Keep cow intact. NOTHING ELSE changes. Return edited image same portrait aspect ratio, preserve coordinates exactly.

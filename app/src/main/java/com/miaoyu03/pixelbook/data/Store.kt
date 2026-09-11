@@ -41,6 +41,19 @@ class Store(context: Context) {
     /** 配置（存储目录选择、当前账户等）与业务数据分离 */
     private val cfg = appContext.getSharedPreferences(CFG_NAME, Context.MODE_PRIVATE)
 
+    /** 首页祝福属于外观设置，与账户和账本数据独立。 */
+    fun homeBlessings(): List<String> = listOf(
+        cfg.getString("home_blessing_0", "日日有小暖") ?: "日日有小暖",
+        cfg.getString("home_blessing_1", "岁岁有余欢") ?: "岁岁有余欢",
+    )
+
+    fun setHomeBlessing(index: Int, text: String) {
+        require(index in 0..1)
+        val value = text.trim()
+        require(value.isNotEmpty() && value.length <= 8 && '\n' !in value && '\r' !in value)
+        cfg.edit().putString("home_blessing_$index", value).apply()
+    }
+
     /** 旧版内部存储使用的 SharedPreferences（仅迁移用） */
     private val legacyPrefs = appContext.getSharedPreferences("pixelbook_data", Context.MODE_PRIVATE)
 

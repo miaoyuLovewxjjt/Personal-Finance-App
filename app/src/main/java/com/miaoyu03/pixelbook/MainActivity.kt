@@ -78,8 +78,10 @@ fun PixelBookApp() {
             .fillMaxSize()
             .creamTexture()
             // 内容区避让系统栏：状态栏（透明区模拟器会拦截点击）、手势导航区
-            .statusBarsPadding()
-            .navigationBarsPadding()
+            .then(
+                if (stack.last() == Screen.Start) Modifier
+                else Modifier.statusBarsPadding().navigationBarsPadding()
+            )
     ) {
         val top = stack.last()
         when (top) {
