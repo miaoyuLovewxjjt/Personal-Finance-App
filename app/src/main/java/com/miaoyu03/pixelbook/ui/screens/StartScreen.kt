@@ -171,12 +171,8 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
             },
         )
         Box(region(700f, 1301f, 140f, 56f), contentAlignment = Alignment.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PxText("start", size = with(density) { (20f * scale).toSp() }, color = signInk,
-                    font = pixelFont, maxLines = 1, align = TextAlign.Center)
-                Spacer(Modifier.width(with(density) { (4f * scale).toDp() }))
-                SignSymbol(heartPixels, Color(0xFFD9473F), Modifier.size(with(density) { (20f * scale).toDp() }))
-            }
+            PxText("start", size = with(density) { (20f * scale).toSp() }, color = signInk,
+                font = pixelFont, maxLines = 1, align = TextAlign.Center)
         }
         Box(region(718f, 1489f, 96f, 59f), contentAlignment = Alignment.Center) {
             SignSymbol(gearPixels, signInk, Modifier.size(with(density) { (30f * scale).toDp() }))
@@ -313,15 +309,6 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
         )
     }
 }
-
-private val heartPixels = listOf(
-    ".##.##.",
-    "#######",
-    "#######",
-    ".#####.",
-    "..###..",
-    "...#...",
-)
 
 private val gearPixels = listOf(
     ".....##.....##......",
