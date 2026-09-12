@@ -179,7 +179,7 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
             }
         }
         Box(region(718f, 1489f, 96f, 59f), contentAlignment = Alignment.Center) {
-            SignSymbol(heartOutlinePixels, signInk, Modifier.size(with(density) { (30f * scale).toDp() }))
+            SignSymbol(gearPixels, signInk, Modifier.size(with(density) { (30f * scale).toDp() }))
         }
         SceneHotspot(
             modifier = region(688f, 1291f, 164f, 76f),
@@ -323,13 +323,23 @@ private val heartPixels = listOf(
     "...#...",
 )
 
-private val heartOutlinePixels = listOf(
-    ".##.##.",
-    "##...##",
-    "#.....#",
-    ".#...#.",
-    "..#.#..",
-    "...#...",
+private val gearPixels = listOf(
+    ".....##.....##......",
+    ".....##.....##......",
+    "..################..",
+    ".##################.",
+    "####################",
+    "######......######..",
+    "#####........#####..",
+    "####....####....####",
+    "####....####....####",
+    "#####........#####..",
+    "######......######..",
+    "####################",
+    ".##################.",
+    "..################..",
+    ".....##.....##......",
+    ".....##.....##......",
 )
 
 /** Integer-grid silhouettes share the board lettering's dark coffee ink. */
