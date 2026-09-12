@@ -835,10 +835,8 @@ fun TxFormDialog(
     val accountId = remember(tx) { store.ledger(ledgerId)?.accountId ?: "" }
     val cats = remember(accountId) { if (isIn) store.incomeCats(accountId) else store.expenseCats(accountId) }
     val assetOptions: List<Pair<String, String>> = remember(accountId) {
-        val list = if (accountId.isEmpty()) emptyList()
+        if (accountId.isEmpty()) emptyList()
         else store.assetsOf(accountId).map { it.id to it.fullLabel() }
-        android.util.Log.d("PixelDebug", "TxForm accountId=$accountId assets=${list.size} ${list.map { it.second }}")
-        list
     }
     // 编辑历史记录时：类别不在类表中（如旧数据/已被删除）→ 归入「自定义」并预填输入框
     val catIsCustom = tx != null && tx.category !in cats

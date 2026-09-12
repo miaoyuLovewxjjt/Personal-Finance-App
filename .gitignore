@@ -8,6 +8,8 @@ captures/
 .cxx/
 *.keystore
 /keystore/
+# 签名口令（本地保留，不入库；示例见 keystore.properties.example）
+/keystore.properties
 
 # IDE
 .idea/

@@ -92,12 +92,12 @@ import kotlin.math.sqrt
 
 @Composable
 fun pixFont(): androidx.compose.ui.text.font.FontFamily {
-    val ctx = LocalContext.current
-    return remember(ctx) {
+    // 用 R.font.zpix 直接引用（而非 getIdentifier 字符串查找）：
+    // 字符串查找对资源裁剪（shrinkResources）不可见，字体可能被误删；
+    // 直接引用还能让资源缺失在编译期暴露
+    return remember {
         androidx.compose.ui.text.font.FontFamily(
-            androidx.compose.ui.text.font.Font(
-                ctx.resources.getIdentifier("zpix", "font", ctx.packageName)
-            )
+            androidx.compose.ui.text.font.Font(R.font.zpix)
         )
     }
 }

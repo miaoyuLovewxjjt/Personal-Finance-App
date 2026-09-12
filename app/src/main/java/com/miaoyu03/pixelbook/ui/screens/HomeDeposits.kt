@@ -56,6 +56,7 @@ import com.miaoyu03.pixelbook.data.Store
 import com.miaoyu03.pixelbook.ui.Px
 import com.miaoyu03.pixelbook.ui.PixelButton
 import com.miaoyu03.pixelbook.ui.PixelCalendarDialog
+import com.miaoyu03.pixelbook.ui.StorageDiagnosticsSection
 import com.miaoyu03.pixelbook.ui.PixelConfirm
 import com.miaoyu03.pixelbook.ui.PixelDialog
 import com.miaoyu03.pixelbook.ui.PixelDropdown
@@ -748,7 +749,7 @@ private fun DepositRow(
 }
 
 /* ================================================================
- * 编辑账本弹窗：名称 / 字体 / 封面颜色（主页卡片右侧铅笔进入）
+ * 编辑账本弹窗：名称 / 字体（主页卡片右侧铅笔进入）
  * ================================================================ */
 
 @Composable
@@ -760,7 +761,6 @@ fun EditLedgerDialog(
 ) {
     var name by remember(ledger.id) { mutableStateOf(ledger.name) }
     var font by remember(ledger.id) { mutableStateOf(ledger.font) }
-    var cover by remember(ledger.id) { mutableIntStateOf(ledger.coverColor) }
 
     PixelDialog(
         title = "编辑账本",
@@ -776,7 +776,8 @@ fun EditLedgerDialog(
                         store.toast("账本名称不能超过${Store.MAX_LEDGER_NAME}字")
                         return@PixelButton
                     }
-                    store.updateLedger(ledger.id, nm, font, cover)
+                    // 封面配色保留原值（已不提供编辑入口）
+                    store.updateLedger(ledger.id, nm, font, ledger.coverColor)
                     onSaved()
                 },
                 bg = Px.Clay, height = 40.dp, modifier = Modifier.width(110.dp),
@@ -803,34 +804,6 @@ fun EditLedgerDialog(
                         onClick = { font = f },
                         modifier = Modifier.weight(1f),
                     )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            PxText("账本颜色", size = 12.sp, color = Px.GrayText)
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Px.Covers.forEachIndexed { i, c ->
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(c)
-                            .clickable { cover = i }
-                            .drawBehind {
-                                if (i == cover) {
-                                    val stroke = 3.dp.toPx()
-                                    drawRect(
-                                        Px.Brown,
-                                        topLeft = Offset(stroke / 2, stroke / 2),
-                                        size = Size(size.width - stroke, size.height - stroke),
-                                        style = Stroke(width = stroke)
-                                    )
-                                }
-                            }
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (i == cover) PixelIcon("plus", size = 14.dp)
-                    }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -976,6 +949,11 @@ fun SettingsDialog(
                 Spacer(Modifier.height(4.dp))
                 PxText("最近写入出错：$err", size = 11.sp, color = Px.Red)
             }
+            // 数据损坏提示（如账本 JSON 解析失败）：不会静默当成空账本
+            store.lastDataError()?.let { err ->
+                Spacer(Modifier.height(4.dp))
+                PxText("数据异常：$err", size = 11.sp, color = Px.Red)
+            }
             Spacer(Modifier.height(8.dp))
             PxText("切换目录后，现有数据将自动迁移到新目录，账本数据以 JSON 文件保存。", size = 11.sp, color = Px.GrayText)
             Spacer(Modifier.height(14.dp))
@@ -1022,6 +1000,8 @@ fun SettingsDialog(
                 color = Px.GrayText,
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
             )
+            // debug 版「存储自检」入口；release 版为空的占位实现（源码集隔离，正式包不含诊断代码）
+            StorageDiagnosticsSection(store)
         }
     }
 

@@ -57,11 +57,21 @@ class Store(context: Context) {
     /** 旧版内部存储使用的 SharedPreferences（仅迁移用） */
     private val legacyPrefs = appContext.getSharedPreferences("pixelbook_data", Context.MODE_PRIVATE)
 
-    /** 当前数据存储后端 */
-    private var io: LedgerIO
+    /** 当前数据存储后端（切换目录时可能在后台线程替换 → volatile） */
+    @Volatile private var io: LedgerIO
 
     /** 最近一次写入错误（设置页展示，toast 错过也能查） */
     @Volatile private var lastWriteError: String? = null
+
+    /** 最近一次数据损坏（解析失败）；与写入错误分开，避免被后续成功写入覆盖 */
+    @Volatile private var lastDataError: String? = null
+
+    /**
+     * 缓存读写保护：缓存本身用 ConcurrentHashMap（单次读写免锁），
+     * 只有「读-改-写」复合操作（ledgersOf 的 diff+填充、整体失效等）才加锁，
+     * 避免后台线程（切换存储目录 / PDF 导出）与主线程并发时抛 ConcurrentModificationException。
+     */
+    private val cacheLock = Any()
 
     /**
      * 账本元信息缓存（去索引后的扫描结果）。
@@ -69,14 +79,14 @@ class Store(context: Context) {
      * 文件列表变化时按文件名 diff，只解析新增文件。读目录名本身成本很低，
      * 避免每次 ledgersOf 全量解析大账本包。
      */
-    private val ledgerMetaCache = HashMap<String, MutableMap<String, Ledger>>()
+    private val ledgerMetaCache = java.util.concurrent.ConcurrentHashMap<String, MutableMap<String, Ledger>>()
 
     /**
      * 账本流水缓存 ledgerId -> List<Tx>：避免 DetailScreen/EntryScreen 每次重组（tick++ 等）
      * 都全量读账本 JSON 并解析全部流水（SAF 目录上明显卡顿）。
      * 任何写流水路径（addTx/updateTx/deleteTx/saveTxs）都会失效对应条目。
      */
-    private val txCache = HashMap<String, List<Tx>>()
+    private val txCache = java.util.concurrent.ConcurrentHashMap<String, List<Tx>>()
 
     /**
      * 高频 IO 缓存——保存/读取链路内存化，避免每次保存全量读+写账本包、反复读账户/类别/资产文件：
@@ -87,21 +97,29 @@ class Store(context: Context) {
      *  - ledgerByIdCache ledgerId → 账本元信息（避免 saveTxs/readBundle 链路反复全表扫描列目录）
      * 写入路径同步更新/失效；写失败不污染缓存；切换存储目录/删除后整体失效。
      */
-    private val bundleCache = HashMap<String, String>()
+    private val bundleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     @Volatile private var accountRawCache: String? = null
-    private val catsRawCache = HashMap<String, String>()
-    private val assetsRawCache = HashMap<String, String>()
-    private val depRawCache = HashMap<String, String>()     // accountId → my_saving.json 原文
-    private val itemsRawCache = HashMap<String, String>()   // accountId → my_items.json 原文
-    private val workRawCache = HashMap<String, String>()    // accountId → my_work.json 原文
-    private val tasksRawCache = HashMap<String, String>()   // accountId → my_tasks.json 原文
-    private val ledgerByIdCache = HashMap<String, Ledger>()
+    private val catsRawCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val assetsRawCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val depRawCache = java.util.concurrent.ConcurrentHashMap<String, String>()     // accountId → my_saving.json 原文
+    private val itemsRawCache = java.util.concurrent.ConcurrentHashMap<String, String>()   // accountId → my_items.json 原文
+    private val workRawCache = java.util.concurrent.ConcurrentHashMap<String, String>()    // accountId → my_work.json 原文
+    private val tasksRawCache = java.util.concurrent.ConcurrentHashMap<String, String>()   // accountId → my_tasks.json 原文
+    private val ledgerByIdCache = java.util.concurrent.ConcurrentHashMap<String, Ledger>()
 
     init {
         io = loadIo()
-        // 兼容整理：整目录无规范布局（无 my_account.json）时执行迁移；
-        // 已有账户体系时 normalize 内部仍会幂等合并根目录残留的旧裸数据，不会重复/覆盖
-        if (io.read(ACCOUNTS_JSON) == null) {
+        // 兼容整理：
+        //  a) 整目录无规范布局（无 my_account.json）→ 执行完整迁移（过渡期改名 + 旧裸数据搬入）；
+        //  b) 已有账户体系但根目录仍残留旧裸数据（如首次启动后又从外部拷回旧文件）→
+        //     只跑一次幂等合并，不会重复/覆盖。用 listDirRaw 的根清单做廉价预判，
+        //     无旧数据时零成本跳过（不会每次启动都全量扫描账户目录）。
+        val hasLegacyMarkers = runCatching {
+            io.listDirRaw("").any { fn ->
+                fn.endsWith(".json") && (!fn.startsWith("my_") || fn == OLD_ACCOUNTS_JSON)
+            }
+        }.getOrDefault(false)
+        if (io.read(ACCOUNTS_JSON) == null || hasLegacyMarkers) {
             val summary = normalize(io)
             if (summary.migrated > 0) {
                 runCatching { toast("已整理旧数据：${summary.migrated} 个账本 → ${summary.accounts} 个账户") }
@@ -159,7 +177,6 @@ class Store(context: Context) {
         private const val CFG_NAME = "pixelbook_cfg"
         private const val KEY_STORAGE_TREE = "storage_tree"
         private const val KEY_LAST_SWITCH = "last_switch_result"
-        private const val KEY_PREV_STORAGE_TREE = "prev_storage_tree"
         private const val KEY_STORAGE_HISTORY = "storage_history"
         private const val KEY_CUR_ACCOUNT = "current_account"
 
@@ -321,7 +338,7 @@ class Store(context: Context) {
      *   2) 根目录出现旧式数据（SharedPreferences 由调用侧传入、SAF 根文件 pixelbook_*.json、
      *      {账本名}_{时间戳}.json 备份、老三文件 txs.<id>/dps.<id>/wx.<id>）且无账户
      *      → 建立「默认账户」文件夹并搬入，逐账本保证不丢。
-     *   3) 每个账户文件夹补齐四个规范文件（空则以 [] 占位）。
+     *   3) 每个账户文件夹补齐规范文件（缺则以默认内容/[] 占位）。
      * 幂等：以 my_account.json 是否存在为界；某一步失败不影响已完成的迁移。
      */
     private fun normalize(target: LedgerIO): NormalizeSummary {
@@ -347,7 +364,7 @@ class Store(context: Context) {
             // 已有其他账户则新建「默认账户」并存；无旧数据时零成本直接返回。
             migrateLegacyIntoDefault(target, summary)
         }
-        // 无论上面做了什么，确保每个账户文件夹都有四个规范文件（缺则占位补空）
+        // 无论上面做了什么，确保每个账户文件夹都有规范文件（缺则占位补空）
         runCatching { ensureStandardFiles(target) }
         // 数据整理/迁移后刷新账户占用空间
         runCatching {
@@ -626,10 +643,14 @@ class Store(context: Context) {
                     target.removeRaw("${LEGACY_PREFIX}${LEGACY_KEY_PREFIX}${l.id}")
                     target.removeRaw("${LEGACY_PREFIX}ledger.${l.id}")
                 }
-                // 仅清理「确认是账本包且已搬走」的根 json（无前缀备份文件同样校验内容为账本包后才删）
+                // 仅清理「确认是账本包且已搬走」的根 json：pixelbook_ 前缀文件逐个校验内容为账本包
+                // （否则不删，遵守「读不到不删」），无前缀备份文件同样以 rootJsonSources 白名单为界
                 target.listDirRaw("").filter {
-                    it.endsWith(".json") && !it.startsWith(LEDGER_FILE_PREFIX) &&
-                        (it.startsWith(LEGACY_PREFIX) || it in rootJsonSources)
+                    it.endsWith(".json") && !it.startsWith(LEDGER_FILE_PREFIX) && it != ACCOUNTS_JSON &&
+                        (it in rootJsonSources ||
+                            (it.startsWith(LEGACY_PREFIX) && runCatching {
+                                target.readNamedRaw(it)?.let { raw -> parseBundleMeta(raw) != null } ?: false
+                            }.getOrDefault(false)))
                 }.forEach { target.removeRaw(it) }
             }
         }
@@ -777,7 +798,7 @@ class Store(context: Context) {
             io.writeNamedRaw("$folder/$TASKS_JSON", "[]")
         }
         appendAccountMeta(id, nm, folder)
-        return Account(id, nm)
+        return Account(id, nm, avatar = 1)
     }
 
     /** 追加账户到 my_account.json（含 folder；size 按需重算占位 0） */
@@ -785,6 +806,7 @@ class Store(context: Context) {
         val arr = readAccountsRaw().toMutableList()
         arr.add(JSONObject().apply {
             put("id", id); put("name", name); put("created", LocalDate.now().toString()); put("folder", folder); put("size", 0L)
+            put("av", 1)
         })
         safeIo { io.write(ACCOUNTS_JSON, JSONArray(arr).toString()) }
         accountRawCache = null
@@ -824,7 +846,8 @@ class Store(context: Context) {
         val old = account(id) ?: return false
         val nm = newName.trim()
         if (nm.isEmpty() || accounts().any { it.name == nm }) return false
-        val oldFolder = accountFolder(old.name)
+        // 用索引里记录的 folder（可能由自愈/旧数据写入，不一定等于按名清洗的结果）
+        val oldFolder = folderOfAccount(id) ?: accountFolder(old.name)
         val newFolder = accountFolder(nm)
         // 清洗后目录已被其他账户占用 → 拒绝，防覆盖/混入
         if (newFolder != oldFolder && io.listDirs().any { it == newFolder }) return false
@@ -885,7 +908,8 @@ class Store(context: Context) {
         val old = account(id) ?: return false
         // 先收集该账户下账本 id（用于清流水缓存），再删文件夹
         val doomed = ledgersOf(id).map { it.id }
-        io.deleteDir(accountFolder(old.name))
+        // 用索引里记录的 folder（可能与按名清洗的结果不同，用错会删不掉/删错）
+        folderOfAccount(id)?.let { io.deleteDir(it) } ?: io.deleteDir(accountFolder(old.name))
         ledgerMetaCache.remove(id)
         doomed.forEach { txCache.remove(it) }
         doomed.forEach { bundleCache.remove(it) }
@@ -918,20 +942,51 @@ class Store(context: Context) {
     /** 某账户下账本（扫描 my_ledger_*.json；只解析新增文件的头部，按创建时间戳倒序） */
     fun ledgersOf(accountId: String): List<Ledger> {
         val folder = folderOfAccount(accountId) ?: return emptyList()
-        val cache = ledgerMetaCache.getOrPut(accountId) { mutableMapOf() }
-        val files = io.listDirRaw(folder)
-            .filter { it.startsWith(LEDGER_FILE_PREFIX) && it.endsWith(LEDGER_FILE_SUFFIX) }
-            .toSet()
-        // 移除已删除文件的缓存
-        cache.keys.retainAll(files)
-        // 解析新增文件（只读头部元信息）
-        for (fn in files) {
-            if (fn in cache) continue
-            val raw = io.readNamedRaw("$folder/$fn") ?: continue
-            val meta = parseBundleMeta(raw)?.ledger ?: continue
-            cache[fn] = meta.copy(accountId = accountId, file = fn)
+        // diff + 填充是「读-改-写」复合操作，需整体加锁：
+        // 后台线程（切换目录 / PDF 导出）与主线程可能并发调用
+        synchronized(cacheLock) {
+            val cache = ledgerMetaCache.getOrPut(accountId) { mutableMapOf() }
+            val files = io.listDirRaw(folder)
+                .filter { it.startsWith(LEDGER_FILE_PREFIX) && it.endsWith(LEDGER_FILE_SUFFIX) }
+                .toSet()
+            // 移除已删除文件的缓存
+            cache.keys.retainAll(files)
+            // 解析新增文件（只读头部元信息）
+            val broken = mutableListOf<String>()
+            for (fn in files) {
+                if (fn in cache) continue
+                val raw = io.readNamedRaw("$folder/$fn") ?: continue
+                val meta = parseBundleMeta(raw)?.ledger
+                if (meta == null) {
+                    // 文件在但头部解析不出来：不能静默当成「没有这个账本」，
+                    // 否则用户看到账本凭空消失（数据其实还在磁盘上）
+                    broken.add(fn)
+                    continue
+                }
+                cache[fn] = meta.copy(accountId = accountId, file = fn)
+            }
+            if (broken.isNotEmpty()) {
+                noteDataError("账本文件无法解析（数据未被删除，可尝试修复或恢复备份）：${broken.joinToString("、")}")
+            }
+            return cache.values.sortedByDescending { idStampMs(it.id) }
         }
-        return cache.values.sortedByDescending { idStampMs(it.id) }
+    }
+
+    /** 整体失效所有内存缓存（切换存储目录 / 删除账户后调用） */
+    private fun invalidateAllCaches() {
+        synchronized(cacheLock) {
+            ledgerMetaCache.clear()
+            txCache.clear()
+            bundleCache.clear()
+            ledgerByIdCache.clear()
+            accountRawCache = null
+            catsRawCache.clear()
+            assetsRawCache.clear()
+            depRawCache.clear()
+            itemsRawCache.clear()
+            workRawCache.clear()
+            tasksRawCache.clear()
+        }
     }
 
     fun ledgers(): List<Ledger> = accounts().flatMap { ledgersOf(it.id) }
@@ -942,18 +997,16 @@ class Store(context: Context) {
     /** 账本 id → 创建毫秒（时间戳排序/文件名用） */
     private fun idStampMs(id: String): Long = id.substringBefore("_").toLongOrNull() ?: 0L
 
-    /** 新建账本（accountId 账户下，最多 60 本）；超限返回 null */
+    /** 新建账本（accountId 账户下，最多 60 本）；超限或写盘失败返回 null */
     fun addLedger(accountId: String, name: String, coverIdx: Int): Ledger? {
         val folder = folderOfAccount(accountId) ?: return null
         if (ledgersOf(accountId).size >= MAX_LEDGER_PER_ACCOUNT) return null
         val id = newId()
         val l = Ledger(id = id, name = name.trim(), coverColor = coverIdx,
             file = ledgerFileName(Ledger(id, name.trim(), coverIdx)), accountId = accountId)
-        // 初始化空数据包（含账本信息）；成功后文件即存在，缓存直接登记（省一次重扫）
-        safeBundleSave(l, emptyBundleLike(l))
-        if (io.readNamedRaw("$folder/${l.file}") != null) {
-            ledgerMetaCache.getOrPut(accountId) { mutableMapOf() }[l.file] = l
-        }
+        // 初始化空数据包（含账本信息）；写失败则返回 null，避免 UI 显示一个磁盘上并不存在的账本
+        if (!safeBundleSave(l, emptyBundleLike(l))) return null
+        ledgerMetaCache.getOrPut(accountId) { mutableMapOf() }[l.file] = l
         ledgerByIdCache.clear()
         refreshAccountSize(accountId)
         return l
@@ -1174,13 +1227,23 @@ class Store(context: Context) {
         return true
     }
 
-    /** 类别改名/删除后，该账户所有账本流水同步 */
+    /**
+     * 类别改名/删除后，该账户所有账本流水同步。
+     * 先改流水再改类别定义：反过来的话，若中途失败会留下「定义里没有该类别、
+     * 流水里仍是旧名」的孤儿状态。先改流水更安全——即使中途失败，类别定义仍保留旧名，
+     * 重试一次即可收敛（幂等）。
+     */
     private fun applyCatRename(accountId: String, dir: TxDir, old: String, new: String) {
-        for (l in ledgersOf(accountId)) {
-            val list = txList(l.id).map {
+        val ledgerIds = ledgersOf(accountId).map { it.id }
+        // 一次性取出并比较，避免每个账本重复读两次缓存
+        val changed = ledgerIds.filter { id ->
+            txList(id).any { it.dir == dir && it.category == old }
+        }
+        for (id in changed) {
+            val list = txList(id).map {
                 if (it.dir == dir && it.category == old) it.copy(category = new) else it
             }
-            if (list != txList(l.id)) saveTxs(l.id, list)
+            saveTxs(id, list)
         }
     }
 
@@ -1298,30 +1361,85 @@ class Store(context: Context) {
         val p = bundleFilePath(l) ?: return null
         // 内存缓存命中直接解析（无 IO）；未命中读文件并登记
         val raw = bundleCache[id] ?: io.readNamedRaw(p)?.also { bundleCache[id] = it } ?: return null
-        return runCatching { JSONObject(raw) }.getOrNull()
+        return runCatching { JSONObject(raw) }.getOrElse {
+            // 文件存在但解析失败：明确记录，不要把「损坏」当成「空账本」
+            noteDataError("账本数据解析失败：$p")
+            null
+        }
+    }
+
+    /**
+     * 读数据包用于「写」：区分「文件不存在」与「文件损坏」。
+     *  - 不存在 → 返回 null，调用方按空账本新建；
+     *  - 存在但解析失败 → 抛异常，拒绝写入。
+     * 早期版本两种情况都返回 null，写路径会用空账本覆盖损坏文件，
+     * 导致一次读取失败就永久清空该账本全部流水。
+     */
+    private fun readBundleForWrite(id: String): JSONObject? {
+        val l = ledger(id) ?: return null
+        val p = bundleFilePath(l) ?: return null
+        val raw = bundleCache[id] ?: io.readNamedRaw(p)?.also { bundleCache[id] = it } ?: return null
+        val obj = runCatching { JSONObject(raw) }.getOrElse {
+            noteDataError("账本数据解析失败：$p")
+            throw IllegalStateException("账本数据损坏，已停止写入以免覆盖原有数据（$p）")
+        }
+        // 整个文件是合法 JSON，但流水数组里有坏记录时 parseTxs 会整体返回空列表。
+        // 若不拦截，下一次保存就会用「空流水」把全部记录覆盖掉。
+        val txs = obj.optJSONArray("txs")
+        if (txs != null && txs.length() > 0 && parseTxs(txs.toString()).isEmpty()) {
+            noteDataError("账本流水存在无法解析的记录：$p")
+            throw IllegalStateException("账本流水数据异常，已停止写入以免覆盖原有记录（$p）")
+        }
+        return obj
+    }
+
+    /** 记录数据损坏（设置页可见），同一错误只提示一次 */
+    private fun noteDataError(msg: String) {
+        if (lastDataError == msg) return
+        lastDataError = msg
+        android.util.Log.e("PixelStore", msg)
+        runCatching { toast(msg) }
+    }
+
+    /** 最近一次数据损坏信息（无则 null），设置页展示用 */
+    fun lastDataError(): String? = lastDataError
+
+    /**
+     * 暴露底层后端供 debug 版「存储自检」做真实读写验证（release 版无调用方）。
+     * 仅诊断代码使用；业务代码不要走这里。
+     */
+    internal fun debugIo(): LedgerIO = io
+
+    /** 账本索引对应的数据包文件是否存在（自检用：索引与磁盘一致性体检） */
+    internal fun ledgerFileExists(l: Ledger): Boolean {
+        val folder = folderOfAccount(l.accountId) ?: return false
+        return io.readNamedRaw("$folder/${l.file.ifBlank { ledgerFileName(l) }}") != null
     }
 
     private fun emptyBundleLike(l: Ledger) =
         JSONObject(bundleJson(l, emptyList(), emptyList(), JSONObject(), JSONObject()))
 
-    /** 写账本数据包（重建整个包：txs/dps/wx/bdg 合并写入）；写成功才更新内存缓存 */
-    private fun writeBundle(l: Ledger, obj: JSONObject) {
-        val p = bundleFilePath(l) ?: return
+    /** 写账本数据包（重建整个包：txs/dps/wx/bdg 合并写入）；返回是否写成功（成功才更新内存缓存） */
+    private fun writeBundle(l: Ledger, obj: JSONObject): Boolean {
+        val p = bundleFilePath(l) ?: return false
         val raw = obj.toString()
-        if (safeIo { io.writeNamedRaw(p, raw) }) {
-            bundleCache[l.id] = raw
-        }
+        val ok = safeIo { io.writeNamedRaw(p, raw) }
+        if (ok) bundleCache[l.id] = raw
+        return ok
     }
 
-    private fun safeBundleSave(l: Ledger, obj: JSONObject) {
-        try {
-            val p = bundleFilePath(l) ?: return
+    /** 写账本数据包（新建账本用）；返回是否成功（失败时调用方应放弃该账本） */
+    private fun safeBundleSave(l: Ledger, obj: JSONObject): Boolean {
+        return try {
+            val p = bundleFilePath(l) ?: return false
             io.writeNamedRaw(p, obj.toString())
             bundleCache[l.id] = obj.toString()
+            true
         } catch (e: Exception) {
             android.util.Log.e("PixelStore", "bundle save failed: ${l.id} -> ${e.message}", e)
             lastWriteError = "${e.message ?: e.javaClass.simpleName}"
             runCatching { toast("保存失败：${e.message ?: e.javaClass.simpleName}") }
+            false
         }
     }
 
@@ -1343,6 +1461,20 @@ class Store(context: Context) {
 
     /* ================= 流水 ================= */
 
+    /**
+     * 写操作的统一保护：把「数据损坏」等异常转成提示，而不是让 App 崩溃。
+     * 写入被放弃（绝不覆盖原文件），错误同时记入 lastWriteError 供设置页查看。
+     */
+    private fun writeOp(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            android.util.Log.e("PixelStore", "write op refused: ${e.message}", e)
+            lastWriteError = e.message ?: e.javaClass.simpleName
+            runCatching { toast(e.message ?: "保存失败") }
+        }
+    }
+
     fun txList(ledgerId: String): List<Tx> = txCache.getOrPut(ledgerId) {
         parseTxs(readBundle(ledgerId)?.optJSONArray("txs")?.toString())
     }
@@ -1350,32 +1482,28 @@ class Store(context: Context) {
     fun txOfDay(ledgerId: String, date: LocalDate): List<Tx> =
         txList(ledgerId).filter { it.date == date }
 
-    fun addTx(tx: Tx) {
-        val list = txList(tx.ledgerId).toMutableList().apply { add(tx) }
-        saveTxs(tx.ledgerId, list)
+    fun addTx(tx: Tx) = writeOp {
+        saveTxs(tx.ledgerId, txList(tx.ledgerId) + tx)
     }
 
-    fun updateTx(tx: Tx) {
-        val list = txList(tx.ledgerId).map { if (it.id == tx.id) tx else it }
-        saveTxs(tx.ledgerId, list)
+    fun updateTx(tx: Tx) = writeOp {
+        saveTxs(tx.ledgerId, txList(tx.ledgerId).map { if (it.id == tx.id) tx else it })
     }
 
-    fun deleteTx(id: String, ledgerId: String) {
-        val l = ledger(ledgerId) ?: return
-        val obj = readBundle(ledgerId) ?: emptyBundleLike(l)
+    fun deleteTx(id: String, ledgerId: String) = writeOp {
+        val l = ledger(ledgerId) ?: return@writeOp
+        val obj = readBundleForWrite(ledgerId) ?: emptyBundleLike(l)
         val list = parseTxs(obj.optJSONArray("txs")?.toString()).filterNot { it.id == id }
         obj.put("txs", JSONArray().apply { list.forEach { put(txToJson(it)) } })
-        writeBundle(l, obj)
-        txCache.remove(ledgerId)
+        if (writeBundle(l, obj)) txCache.remove(ledgerId)
     }
 
     private fun saveTxs(ledgerId: String, list: List<Tx>) {
         val l = ledger(ledgerId) ?: return
-        val obj = readBundle(ledgerId) ?: emptyBundleLike(l)
+        val obj = readBundleForWrite(ledgerId) ?: emptyBundleLike(l)
         obj.put("txs", JSONArray().apply { list.forEach { put(txToJson(it)) } })
-        writeBundle(l, obj)
-        // 写后更新缓存（比失效后下次重读更快）
-        txCache[ledgerId] = list
+        // 写成功才更新缓存（写失败时缓存保持旧值，下次读仍从文件取）
+        if (writeBundle(l, obj)) txCache[ledgerId] = list
     }
 
     /* ================= 资产（账户级公用：账户文件夹内 my_saving.json） ================= */
@@ -1599,9 +1727,9 @@ class Store(context: Context) {
         return Weather.entries.firstOrNull { it.name == name }
     }
 
-    fun setWeather(ledgerId: String, date: LocalDate, w: Weather) {
-        val l = ledger(ledgerId) ?: return
-        val obj = readBundle(ledgerId) ?: emptyBundleLike(l)
+    fun setWeather(ledgerId: String, date: LocalDate, w: Weather) = writeOp {
+        val l = ledger(ledgerId) ?: return@writeOp
+        val obj = readBundleForWrite(ledgerId) ?: emptyBundleLike(l)
         val wx = obj.optJSONObject("wx") ?: JSONObject().also { obj.put("wx", it) }
         wx.put(date.toString(), w.name)
         writeBundle(l, obj)
@@ -1614,15 +1742,19 @@ class Store(context: Context) {
         return if (bdg.has(k)) bdg.optLong(k, 0) else null
     }
 
-    fun setDailyBudget(ledgerId: String, date: LocalDate, cents: Cents): Boolean {
+    fun setDailyBudget(ledgerId: String, date: LocalDate, cents: Cents): Boolean = try {
         val l = ledger(ledgerId) ?: return false
-        val obj = readBundle(ledgerId) ?: emptyBundleLike(l)
+        val obj = readBundleForWrite(ledgerId) ?: emptyBundleLike(l)
         val bdg = obj.optJSONObject(KEY_BDG) ?: JSONObject().also { obj.put(KEY_BDG, it) }
         val k = date.toString()
         if (cents <= 0) bdg.remove(k) else bdg.put(k, cents)
         if (bdg.length() == 0) obj.remove(KEY_BDG)
         writeBundle(l, obj)
-        return true
+    } catch (e: Exception) {
+        android.util.Log.e("PixelStore", "setDailyBudget refused: ${e.message}", e)
+        lastWriteError = e.message ?: e.javaClass.simpleName
+        runCatching { toast(e.message ?: "保存失败") }
+        false
     }
 
     /* ================= 归档（一键同步） ================= */
@@ -1630,21 +1762,25 @@ class Store(context: Context) {
     fun isSynced(ledgerId: String, ym: String): Boolean =
         ledger(ledgerId)?.syncedMonths?.contains(ym) ?: false
 
-    private fun writeSynced(ledgerId: String, ym: String, mark: Boolean) {
-        val old = ledger(ledgerId) ?: return
+    private fun writeSynced(ledgerId: String, ym: String, mark: Boolean) = writeOp {
+        val old = ledger(ledgerId) ?: return@writeOp
         val set = old.syncedMonths.toMutableSet()
         if (mark) set.add(ym) else set.remove(ym)
         val updated = old.copy(syncedMonths = set)
         // syncedMonths 存于数据包头部 ledger 声明（文件本身就是账本元信息，无需索引文件）
-        readBundle(ledgerId)?.let { obj ->
+        readBundleForWrite(ledgerId)?.let { obj ->
             runCatching {
                 obj.getJSONObject("ledger").put("synced", JSONArray(set.toList()))
             }
-            safeIo { writeBundle(updated, obj) }
+            if (writeBundle(updated, obj)) {
+                // 写成功才更新元信息缓存
+                ledgerMetaCache[old.accountId]?.let { it[updated.file] = updated }
+                // ledger() also keeps a direct id cache. Refresh it here so
+                // the summary screen sees the persisted archive mark after
+                // leaving and reopening the ledger.
+                ledgerByIdCache[updated.id] = updated
+            }
         }
-        // 更新缓存
-        val cache = ledgerMetaCache[old.accountId]
-        cache?.let { it[updated.file] = updated }
     }
 
     fun markSynced(ledgerId: String, ym: String) = writeSynced(ledgerId, ym, true)
@@ -1756,7 +1892,9 @@ class Store(context: Context) {
                 for (i in 0 until src.length()) {
                     val o = src.getJSONObject(i)
                     val id = o.optString("id")
-                    if (id.isEmpty() || seen.add(id)) arr.put(o)
+                    // 无 id 的条目按内容判重（旧数据可能是空 id），否则每次切换都会翻倍
+                    val key = if (id.isEmpty()) o.toString() else id
+                    if (seen.add(key)) arr.put(o)
                 }
             }
         }
@@ -1764,10 +1902,29 @@ class Store(context: Context) {
         return arr.toString()
     }
 
+    /** 职业档案合并：目标已有内容则保留目标，目标为空则用当前树的（避免切换目录丢档案） */
+    private fun mergeWorkJson(targetRaw: String?, curRaw: String?): String {
+        fun isBlank(raw: String?): Boolean {
+            raw ?: return true
+            val o = runCatching { JSONObject(raw) }.getOrNull() ?: return true
+            val hasOccupation = o.optString("occupation", "").isNotEmpty()
+            val hasSalary = o.optLong("salary", 0L) > 0L
+            val hasCommute = o.optString("commute", "").isNotEmpty()
+            return !hasOccupation && !hasSalary && !hasCommute
+        }
+        return when {
+            isBlank(targetRaw) && !isBlank(curRaw) -> curRaw!!
+            targetRaw != null -> targetRaw
+            else -> curRaw ?: "{}"
+        }
+    }
+
     /**
      * 切换存储目录：整棵账户树（my_account.json + 各账户文件夹）复制到目标后端，
      * 然后对目标目录执行一次 normalize（若目标仍是旧布局则就地整理为新规范）。
      * treeUri == null 表示恢复应用内部存储。
+     *
+     * 失败时回滚 io / storage_tree，保持原目录继续可用（不把 App 留在半切换状态）。
      */
     fun switchStorage(treeUri: Uri?): String {
         val newIo: LedgerIO = if (treeUri == null) {
@@ -1777,10 +1934,11 @@ class Store(context: Context) {
                 ?: return "切换失败：目录不可用"
             SafLedgerIO(appContext, root)
         }
+        val prevUri = cfg.getString(KEY_STORAGE_TREE, null)
         return runCatching {
             // 合并式整树拷贝到目标目录（目标可能已有数据，绝不覆盖丢失）：
-            //  - 目标已有同名文件：my_choice / my_saving / my_payment 内容级合并（两边都保留），
-            //    账本数据包等其他文件保留目标（不覆盖）；my_account.json 最后统一合并写
+            //  - 目标已有同名文件：my_choice / my_saving / my_payment / my_items / my_work / my_tasks
+            //    内容级合并（两边都保留）；账本数据包等其他文件保留目标（不覆盖）；索引最后统一合并写
             //  - 目标没有的文件：原样写入（当前数据完整到达新目录）
             io.listAllRaw().forEach { rel ->
                 if (rel == ACCOUNTS_JSON) return@forEach   // 索引最后统一合并写
@@ -1789,8 +1947,10 @@ class Store(context: Context) {
                 when {
                     targetContent == null -> newIo.writeNamedRaw(rel, content)
                     rel.endsWith("/$CATS_JSON") -> newIo.writeNamedRaw(rel, mergeCatsJson(targetContent, content))
-                    rel.endsWith("/$SAVING_JSON") || rel.endsWith("/$PAYMENT_JSON") ->
+                    rel.endsWith("/$SAVING_JSON") || rel.endsWith("/$PAYMENT_JSON") || rel.endsWith("/$ITEMS_JSON") ->
                         newIo.writeNamedRaw(rel, mergeJsonArrayById(targetContent, content))
+                    rel.endsWith("/$TASKS_JSON") -> newIo.writeNamedRaw(rel, mergeJsonArrayById(targetContent, content))
+                    rel.endsWith("/$WORK_JSON") -> newIo.writeNamedRaw(rel, mergeWorkJson(targetContent, content))
                     // 其余同名文件（my_ledger_*.json 等）：保留目标，不覆盖
                 }
             }
@@ -1808,21 +1968,11 @@ class Store(context: Context) {
             if (summary.migrated > 0) {
                 runCatching { toast("已整理目标目录旧数据：${summary.migrated} 个账本 → ${summary.accounts} 个账户") }
             }
-            ledgerMetaCache.clear()
-            txCache.clear()
             // 切换目录后全部内存缓存整体失效（文件路径/内容已变化）
-            bundleCache.clear()
-            ledgerByIdCache.clear()
-            accountRawCache = null
-            catsRawCache.clear()
-            assetsRawCache.clear()
-            depRawCache.clear()
-            itemsRawCache.clear()
-            workRawCache.clear()
-            tasksRawCache.clear()
-            // 记录历史与上次结果
-            val prev = cfg.getString(KEY_STORAGE_TREE, null)
-            prev?.let {
+            invalidateAllCaches()
+            // 记录历史与上次结果：历史里存「切换前」的目录（早前版本在写入新 uri 之后才读，
+            // 记录成了新目录自身，历史里永远看不到旧位置）
+            prevUri?.let {
                 val set = cfg.getStringSet(KEY_STORAGE_HISTORY, emptySet()).orEmpty().toMutableSet()
                 set.add("$it|${runCatching { treeUriToPath(it) }.getOrNull() ?: it}")
                 cfg.edit().putStringSet(KEY_STORAGE_HISTORY, set).apply()
@@ -1831,6 +1981,18 @@ class Store(context: Context) {
             "ok"
         }.getOrElse { e ->
             android.util.Log.e("PixelStore", "switch failed", e)
+            // 回滚：切回原后端与原设置，避免 App 停在「新目录读不到数据」的半切换状态
+            runCatching {
+                io = if (prevUri == null) {
+                    FileLedgerIO(File(appContext.filesDir, "ledgers").apply { mkdirs() })
+                } else {
+                    DocumentFile.fromTreeUri(appContext, Uri.parse(prevUri))
+                        ?.let { SafLedgerIO(appContext, it) }
+                        ?: FileLedgerIO(File(appContext.filesDir, "ledgers").apply { mkdirs() })
+                }
+                cfg.edit().putString(KEY_STORAGE_TREE, prevUri).apply()
+                invalidateAllCaches()
+            }
             val msg = "切换失败：${e.message ?: e.javaClass.simpleName}"
             cfg.edit().putString(KEY_LAST_SWITCH, msg).apply()
             msg
@@ -1838,10 +2000,6 @@ class Store(context: Context) {
     }
 
     fun lastSwitchResult(): String? = cfg.getString(KEY_LAST_SWITCH, null)
-    fun prevStorageDescription(): String? = cfg.getString(KEY_PREV_STORAGE_TREE, null)?.let { uri ->
-        runCatching { DocumentFile.fromTreeUri(appContext, Uri.parse(uri))?.name }.getOrNull()
-    }
-    fun prevStoragePath(): String? = cfg.getString(KEY_PREV_STORAGE_TREE, null)?.let { treeUriToPath(it) }
     fun storageHistory(): List<Triple<String, String, String>> =
         cfg.getStringSet(KEY_STORAGE_HISTORY, emptySet()).orEmpty()
             .mapNotNull { s ->
@@ -1871,11 +2029,14 @@ class Store(context: Context) {
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val synced = mutableSetOf<String>()
-            val sa = o.optJSONArray("synced") ?: continue
-            for (j in 0 until sa.length()) synced.add(sa.getString(j))
+            // 旧索引可能没有 synced 字段：不能因为缺一个可选字段就整条跳过（会丢账本）
+            val sa = o.optJSONArray("synced")
+            if (sa != null) for (j in 0 until sa.length()) synced.add(sa.getString(j))
+            val id = o.optString("id"); val name = o.optString("name")
+            if (id.isEmpty() || name.isEmpty()) continue
             out.add(
                 Ledger(
-                    o.getString("id"), o.getString("name"),
+                    id, name,
                     o.optInt("cover", 0),
                     font = o.optString("font", "pixel"),
                     syncedMonths = synced,
@@ -1995,7 +2156,15 @@ private class FileLedgerIO(private val root: File) : LedgerIO {
     override fun writeNamedRaw(relPath: String, content: String) {
         val f = fileOf(relPath)
         f.parentFile?.mkdirs()
-        f.writeText(content, Charsets.UTF_8)
+        // 原子替换：先写同目录临时文件再改名。直接截断覆盖时若进程被杀/掉电，
+        // 文件会停留在半截状态（解析失败 → 账本看起来变空）。renameTo 在同一文件系统内是原子的。
+        val tmp = File(f.parentFile, "${f.name}.tmp")
+        tmp.writeText(content, Charsets.UTF_8)
+        if (!tmp.renameTo(f)) {
+            // 极少数情况下 rename 失败（临时文件被占用等）→ 退回直接写，保证功能不中断
+            f.writeText(content, Charsets.UTF_8)
+            runCatching { tmp.delete() }
+        }
     }
 
     override fun removeRaw(relPath: String) { runCatching { fileOf(relPath).delete() } }
@@ -2079,10 +2248,7 @@ private class SafLedgerIO(private val context: Context, private val root: Docume
     }
 
     override fun deleteDir(rel: String) {
-        docAt(rel)?.takeIf { it.isDirectory }?.let { d ->
-            d.listFiles().forEach { it.delete() }
-            d.delete()
-        }
+        docAt(rel)?.takeIf { it.isDirectory }?.let { d -> runCatching { d.delete() } }
     }
 
     override fun listDirs(): List<String> =
@@ -2112,13 +2278,40 @@ private class SafLedgerIO(private val context: Context, private val root: Docume
             if (isLast) {
                 val target = if (nxt != null && nxt.exists()) nxt else cur.createFile("application/json", p)
                 if (target == null) throw IllegalStateException("无法创建文件 $relPath")
-                context.contentResolver.openOutputStream(target.uri, "wt")?.use { os ->
-                    os.write(content.toByteArray(Charsets.UTF_8))
-                } ?: throw IllegalStateException("无法写入 $relPath")
+                // 原子替换：先写临时文件再删除原名、改名为正式名。
+                // 直接以 "wt" 截断写入时若中途失败，原文件已被清空（账本表现为变空）。
+                val tmpName = "$p.tmp"
+                cur.findFile(tmpName)?.delete()
+                val tmp = cur.createFile("application/json", tmpName)
+                if (tmp != null) {
+                    try {
+                        writeAll(tmp, content)
+                        // 正式文件已存在时先删（SAF 的 renameTo 在目标存在时可能失败）
+                        if (nxt != null && nxt.exists()) nxt.delete()
+                        if (tmp.renameTo(p)) return
+                        // 改名为正式名失败 → 退回就地写
+                        runCatching { tmp.delete() }
+                        val fresh = cur.findFile(p) ?: cur.createFile("application/json", p)
+                            ?: throw IllegalStateException("无法创建文件 $relPath")
+                        writeAll(fresh, content)
+                        return
+                    } catch (e: Exception) {
+                        runCatching { tmp.delete() }
+                        throw e
+                    }
+                }
+                // 无法建临时文件（个别 Provider）→ 就地写
+                writeAll(target, content)
                 return
             }
             cur = nxt ?: cur.createDirectory(p) ?: throw IllegalStateException("无法创建目录 $p")
         }
+    }
+
+    private fun writeAll(target: DocumentFile, content: String) {
+        context.contentResolver.openOutputStream(target.uri, "wt")?.use { os ->
+            os.write(content.toByteArray(Charsets.UTF_8))
+        } ?: throw IllegalStateException("无法写入 ${target.name}")
     }
 
     override fun removeRaw(relPath: String) {

@@ -164,18 +164,19 @@ fun ProfileCard(
                 Column(
                     modifier = Modifier
                         .clickable(onClick = onOpenSaving)
-                        .width(28.dp)
+                        .width(32.dp)
                         .padding(vertical = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    PixelIcon("chest", size = 28.dp)
+                    // 宝箱素材透明留白较多，使用 32dp 后与上方钱包图标的视觉大小一致
+                    PixelIcon("chest", size = 32.dp)
                     Spacer(Modifier.height(2.dp))
                     PxText("我", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
                     PxText("的", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
                     PxText("资", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
                     PxText("产", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
                 }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(6.dp))
                 // 右区两栏：类别名（左）｜ 金额（右，固定宽右对齐）
                 Column(modifier = Modifier.weight(1f)) {
                     if (orderedCats.isEmpty()) {

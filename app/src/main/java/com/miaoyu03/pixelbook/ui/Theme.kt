@@ -52,11 +52,9 @@ object Px {
 }
 
 /* ============ 像素字体（Zpix 最像素 12px） ============ */
+/** 像素字体：统一走 Widgets.pixFont()（带 remember 缓存，且用 R.font 强引用，防资源被裁剪） */
 @Composable
-fun pixelFontFamily(): FontFamily {
-    val ctx = LocalContext.current
-    return FontFamily(Font(ctx.resources.getIdentifier("zpix", "font", ctx.packageName), FontWeight.Normal))
-}
+fun pixelFontFamily(): FontFamily = pixFont()
 
 /**
  * 账本可选字体：像素（默认）/ 可爱风 / 楷体 / 宋体。

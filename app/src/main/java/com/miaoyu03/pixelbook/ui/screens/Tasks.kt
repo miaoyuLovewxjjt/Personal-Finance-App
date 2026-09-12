@@ -77,7 +77,7 @@ fun TodayTasksSection(
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TaskItem?>(null) }
     var deleting by remember { mutableStateOf<TaskItem?>(null) }
-    var collapsed by remember { mutableStateOf(false) }   // 折叠：仅保留「我的任务」标题行
+    var collapsed by remember { mutableStateOf(false) }   // 折叠：仅收起下方任务列表
     val today = LocalDate.now()
     val tasks = remember(accountId, refreshKey) { store.tasksOn(accountId, today) }
     val doneCount = tasks.count { it.done }
@@ -90,8 +90,7 @@ fun TodayTasksSection(
         contentPadding = 12.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // 顶部：我的任务（卷轴图标装饰 + 文字点击 → 全部任务页）
-            // 注：整行 Row 承载 clickable，避免窄文字热区被外层布局吞掉
+            // 顶部：我的任务（卷轴图标装饰 + 整行点击 → 全部任务页）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -103,9 +102,15 @@ fun TodayTasksSection(
                 Spacer(Modifier.width(8.dp))
                 PxText("我的任务", size = 15.sp, color = Px.Brown)
                 Spacer(Modifier.weight(1f))
-                PxText("全部任务", size = 11.sp, color = Px.GrayText)
-                Spacer(Modifier.width(6.dp))
-                // 折叠箭头：展开态 ▶（点击收起）/ 折叠态 ▼（点击展开）；独立热区不触发整行跳转
+            }
+            Spacer(Modifier.height(6.dp))
+            TaskDivider()
+            Spacer(Modifier.height(6.dp))
+            // 今日任务列表（标题 + 折叠箭头 + 计数 + 新增）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PxText("今日任务列表", size = 15.sp, color = Px.Brown)
+                Spacer(Modifier.width(4.dp))
+                // 折叠箭头：收起下方任务；交互与图标风格同左侧导航（展开 ▶ / 收起 ▼）
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -122,35 +127,28 @@ fun TodayTasksSection(
                         desc = if (collapsed) "展开今日任务" else "收起今日任务",
                     )
                 }
-            }
-            if (!collapsed) {
-            Spacer(Modifier.height(6.dp))
-            TaskDivider()
-            Spacer(Modifier.height(6.dp))
-            // 今日任务列表（无左侧图标；标题 + 小字备注 + 编辑/删除）
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                PxText("今日任务列表", size = 15.sp, color = Px.Brown)
                 Spacer(Modifier.weight(1f))
                 PxText("$doneCount / ${tasks.size}", size = 11.sp, color = Px.GrayText)
                 Spacer(Modifier.width(8.dp))
                 PixelIconButton(icon = "plus", size = 28.dp, bg = Px.Yellow,
                     onClick = { showAdd = true }, desc = "新增任务")
             }
-            if (tasks.isEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                PxText("今天暂无任务，点右上「＋」新增", size = 11.sp, color = Px.GrayText)
-            } else {
-                Spacer(Modifier.height(4.dp))
-                tasks.forEach { t ->
-                    TaskRow(
-                        task = t,
-                        showDate = false,
-                        onToggle = { store.toggleTask(accountId, t.id); onChange() },
-                        onEdit = { editing = t },
-                        onDelete = { deleting = t },
-                    )
+            if (!collapsed) {
+                if (tasks.isEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    PxText("今天暂无任务，点右上「＋」新增", size = 11.sp, color = Px.GrayText)
+                } else {
+                    Spacer(Modifier.height(4.dp))
+                    tasks.forEach { t ->
+                        TaskRow(
+                            task = t,
+                            showDate = false,
+                            onToggle = { store.toggleTask(accountId, t.id); onChange() },
+                            onEdit = { editing = t },
+                            onDelete = { deleting = t },
+                        )
+                    }
                 }
-            }
             }
         }
     }

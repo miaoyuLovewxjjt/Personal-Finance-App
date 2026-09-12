@@ -1,11 +1,13 @@
 package com.miaoyu03.pixelbook.data
 
+import com.miaoyu03.pixelbook.BuildConfig
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 /** 应用签名信息（设置页展示 / PDF 页脚） */
 object AppMeta {
-    const val VERSION = "v1.0"                        // 与 git tag 保持一致
+    /** 版本号取自 build.gradle.kts 的 versionName（编译期写入 BuildConfig），无需手工同步 */
+    val VERSION: String = "v" + BuildConfig.VERSION_NAME
     const val GIT_URL = "https://github.com/miaoyuLovewxjjt/Personal-Finance-App"
 }
 
@@ -20,7 +22,7 @@ data class Account(
     val updatedAt: Long = 0L,   // 最近编辑/切换时间（epoch millis；0 = 旧数据无记录，按创建时间兜底）
     val birthday: String = "",  // 生日（自由文本，如 "1998-06-15"，角色卡展示；空 = 未设置）
     val note: String = "",      // 备注（角色卡展示，≤60 字）
-    val avatar: Int = 0,        // 角色形象：0 = 短发男子，1 = 长发女子
+    val avatar: Int = 1,        // 角色形象：0 = 短发男子，1 = 长发女子；新账户默认为女子
 )
 
 /** 资产账户（银行卡/支付宝/微信…，属于某个账户；最新余额由流水自动计算，不可手改） */
@@ -163,10 +165,20 @@ enum class Weather(val label: String) {
 }
 
 object Fmt {
-    private val num = java.text.DecimalFormat("#,##0.00")
+    private val intFmt = java.text.DecimalFormat("#,##0")
 
-    /** 分 → "1,234.00" */
-    fun money(cents: Cents): String = num.format(cents / 100.0)
+    /** 整数部分上限 10^MAX_AMOUNT_INT - 1（9 位 → 999999999） */
+    private val MAX_INT_PART: Long =
+        (1..MAX_AMOUNT_INT).fold(1L) { acc, _ -> acc * 10 } - 1
+
+    /** 分 → "1,234.00"（整数分位拆分，不经过 Double，避免浮点误差） */
+    fun money(cents: Cents): String {
+        val neg = cents < 0
+        val abs = if (neg) -cents else cents
+        val intPart = intFmt.format(abs / 100)
+        val frac = (abs % 100).toString().padStart(2, '0')
+        return "${if (neg) "-" else ""}$intPart.$frac"
+    }
 
     /** 分 → "¥12,345.00" */
     fun yen(cents: Cents): String = "¥${money(cents)}"
@@ -190,14 +202,48 @@ object Fmt {
     fun ymKey(d: LocalDate): String = "%04d-%02d".format(d.year, d.monthValue)
     fun yearKey(d: LocalDate): String = d.year.toString()
 
-    /** 输入字符串 → 分；失败返回 null。容忍 "9,000"、"9000.5" 等写法 */
+    /**
+     * 输入字符串 → 分；失败返回 null。容忍 "9,000"、"9000.5"、"¥100" 等写法。
+     *
+     * 全程整数运算：早期版本走 Double（`(v * 100).toLong()`），
+     * 因二进制无法精确表示 0.29 这类小数，`0.29 * 100 = 28.999…` 截断成 28 分，
+     * 导致录入金额静默少 1 分。这里按字符解析整数/小数部分，结果精确。
+     */
     fun parseCents(input: String): Cents? {
-        val t = input.trim().replace(",", "").replace("¥", "").replace("￥", "")
+        val t = input.trim().replace(",", "").replace("¥", "").replace("￥", "").trim()
         if (t.isEmpty()) return null
-        val v = t.toDoubleOrNull() ?: return null
-        if (v < 0) return null
-        if (v > 999999999.99) return null   // 9 位整数 + 2 位小数上限
-        return (v * 100).toLong()
+        var intPart = 0L
+        var fracPart = 0L
+        var fracDigits = 0
+        var dotSeen = false
+        var digits = 0
+        for (ch in t) {
+            when {
+                ch.isDigit() -> {
+                    val d = ch - '0'
+                    if (dotSeen) {
+                        if (fracDigits >= MAX_AMOUNT_FRAC) return null  // 小数超 2 位
+                        fracPart = fracPart * 10 + d
+                        fracDigits++
+                    } else {
+                        if (intPart > MAX_INT_PART / 10) return null     // 整数超 9 位
+                        intPart = intPart * 10 + d
+                    }
+                    digits++
+                }
+                ch == '.' -> {
+                    if (dotSeen) return null                             // 多个小数点
+                    dotSeen = true
+                }
+                else -> return null                                      // 负号/字母/空白等
+            }
+        }
+        if (digits == 0) return null
+        while (fracDigits < MAX_AMOUNT_FRAC) {                           // "0.5" → 50 分
+            fracPart *= 10
+            fracDigits++
+        }
+        return intPart * 100 + fracPart
     }
 
     /** 按「字符数」截断（中文 1 字 = 1，emoji 按码点计，不劈断代理对） */

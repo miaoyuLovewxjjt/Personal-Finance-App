@@ -48,7 +48,8 @@
 - 更改账户名/账本名，程序自动同步重命名文件夹/文件
 - **兼容性整理**只在两个时机执行：① 首次初始化（目录无 `my_account.json` 时，把旧版 SharedPreferences / `pixelbook_*.json` / 备份账本文件等整理迁入「默认账户」）；② 设置里切换存储目录后对目标目录执行。旧数据逐账本搬迁、先搬后删、读不到不删，保证账本/资产不丢
 - 存储位置：应用内部 或 设置中选择的 SAF 目录；历史目录可查可复制
-- debug 版提供「存储自检」；release 版干净无诊断入口
+- 写盘采用**临时文件 + 改名**的原子替换；读数据包失败时拒绝写入（不会把损坏文件当空账本覆盖）
+- debug 版设置页提供「存储自检」（读写/改名/删除/原子写/并发/数据体检）；release 版通过源码集隔离，**正式包不含任何诊断代码**
 
 ## 🛠 技术要点
 - 原生 **Kotlin + Jetpack Compose**（单 Activity + 状态栈导航），minSdk 24 / targetSdk 35
@@ -61,10 +62,24 @@
 
 ```bash
 ./gradlew assembleDebug     # 调试包（含「存储自检」诊断入口）
-./gradlew assembleRelease   # 正式签名包（keystore/pixelbook.keystore）
+./gradlew assembleRelease   # 正式包（有 keystore 则签名，否则产出 unsigned 包）
+./gradlew test              # 单元测试（金额解析/格式化等回归用例）
 ```
 
-产物位于 `app/build/outputs/apk/`（debug / release），可分发安装包另存于项目外 `APK/` 目录（不入库）。
+**任何环境克隆后都能直接构建**，签名配置可移植：
+
+| 情况 | debug | release |
+| --- | --- | --- |
+| 有 `keystore/pixelbook.keystore` + 口令 | 用正式 keystore 签名（与 release 可互相覆盖安装） | 正式签名包 `app-release.apk` |
+| 只有 keystore、没有口令 | 系统 debug 签名 | 未签名包 `app-release-unsigned.apk` |
+| 克隆后什么都没配 | 系统 debug 签名（AGP 自动生成） | 未签名包 |
+
+口令按 `keystore.properties` → gradle 属性（`~/.gradle/gradle.properties` 或 `-P`）→ 环境变量
+（`PIXELBOOK_STORE_PASSWORD` / `PIXELBOOK_KEY_PASSWORD` / `PIXELBOOK_KEY_ALIAS`）的顺序读取，
+**不写入构建脚本**。复制 `keystore.properties.example` 为 `keystore.properties` 并填写即可启用正式签名
+（该文件已 gitignore）。keystore 路径也可用 `keystorePath` 覆盖。
+
+产物位于 `app/build/outputs/apk/`（debug / release）。
 
 ## 📁 项目结构
 
@@ -79,4 +94,6 @@ app/src/main/java/com/miaoyu03/pixelbook/
     ├── Widgets.kt         # 像素组件库（面板/按钮/表单/开关/图表）
     └── screens/           # 首页(账户) / 记账簿 / 我的资产 / 我的钱包 / 总结页
 app/src/main/res/drawable-nodpi/   # 手绘马赛克图标资源（ic_px_*）
+app/src/debug/java/.../data/StorageSelfCheck.kt   # 存储自检（仅 debug；release 由空实现替代）
+app/src/test/java/.../data/FmtTest.kt             # 金额解析/格式化回归测试
 ```
