@@ -58,9 +58,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * 首页场景图包含标题、记事 NPC 和四层木牌。
+ * 首页场景图包含标题、房屋、菜地和四层木牌。
  * 热区使用原图坐标，统一跟随居中裁剪变换，避免换屏幕后点击位置漂移。
- * 横屏使用完整场景适配，保证 NPC 和两块操作木牌仍可见。
+ * 横屏使用完整场景适配，保证房屋、菜地和木牌仍可见。
  */
 @Composable
 fun StartScreen(store: Store, onStart: (String) -> Unit) {
@@ -75,8 +75,10 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
     val accounts = remember(tick) { store.accountsByRecent() }
     val curId = remember(tick) { store.currentAccountId() }
     val cur = accounts.firstOrNull { it.id == curId } ?: accounts.firstOrNull()
-    val background = ImageBitmap.imageResource(R.drawable.home_farm)
-    val details = ImageBitmap.imageResource(R.drawable.home_details)
+    // Reference scene: the finer composition from the original homepage sketch.
+    // The current interactive labels are painted over the four existing planks below.
+    val background = ImageBitmap.imageResource(R.drawable.home_bg)
+    val boardTexture = ImageBitmap.imageResource(R.drawable.home_details)
     val pixelFont = pixelFontFamily()
     val signInk = Color(0xFF503019)
     val accountPaper = Color(0xFFF2D9A5)
@@ -86,11 +88,11 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize().background(Color(0xFF86B9CA)).clipToBounds()) {
         val viewportW = constraints.maxWidth.toFloat()
         val viewportH = constraints.maxHeight.toFloat()
-        // Tall portrait devices may crop sky/edge foliage, but never the interactive area.
-        // For wide screens use fit, with the same transform for both image and controls.
+        // Fill the viewport with the reference scene. Since its aspect ratio is close to
+        // the target phone canvas, this keeps the house, field, lake and signpost balanced.
         val fit = minOf(viewportW / background.width, viewportH / background.height)
         val crop = max(viewportW / background.width, viewportH / background.height)
-        val scale = if (viewportW > viewportH) fit else minOf(crop, viewportW / (background.width * 0.86f))
+        val scale = if (viewportW > viewportH) fit else crop
         val sceneW = background.width * scale
         val sceneH = background.height * scale
         val originX = (viewportW - sceneW) / 2f
@@ -99,7 +101,7 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
         // A single Canvas avoids layout constraint clamping of an oversized cropped image.
         androidx.compose.foundation.Canvas(
             Modifier.fillMaxSize().semantics {
-                contentDescription = "四季记账，山间农场，房门前坐着记事的人，路旁是祝福木牌"
+                contentDescription = "四季记账，山间农场，房屋、菜地和路旁的祝福木牌"
             },
         ) {
             drawImage(
@@ -108,25 +110,45 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
                 dstSize = androidx.compose.ui.unit.IntSize(sceneW.roundToInt(), sceneH.roundToInt()),
                 filterQuality = FilterQuality.None,
             )
-            // Only these art regions are replaced. The original landscape and its transform stay intact.
-            fun detail(left: Int, top: Int, width: Int, height: Int) {
-                val sx = details.width.toFloat() / background.width
-                val sy = details.height.toFloat() / background.height
+            // Cover only the lettering on the reference planks with the existing blank
+            // plank texture, preserving the reference scene everywhere else.
+            fun blankBoard(
+                sourceLeft: Int,
+                sourceTop: Int,
+                sourceWidth: Int,
+                sourceHeight: Int,
+                targetLeft: Int,
+                targetTop: Int,
+                targetWidth: Int,
+                targetHeight: Int,
+            ) {
                 drawImage(
-                    image = details,
-                    srcOffset = IntOffset((left * sx).roundToInt(), (top * sy).roundToInt()),
-                    srcSize = IntSize((width * sx).roundToInt(), (height * sy).roundToInt()),
-                    dstOffset = IntOffset((originX + left * scale).roundToInt(), (originY + top * scale).roundToInt()),
-                    dstSize = IntSize((width * scale).roundToInt(), (height * scale).roundToInt()),
+                    image = boardTexture,
+                    srcOffset = IntOffset(sourceLeft, sourceTop),
+                    srcSize = IntSize(sourceWidth, sourceHeight),
+                    dstOffset = IntOffset((originX + targetLeft * scale).roundToInt(), (originY + targetTop * scale).roundToInt()),
+                    dstSize = IntSize((targetWidth * scale).roundToInt(), (targetHeight * scale).roundToInt()),
                     filterQuality = FilterQuality.None,
                 )
+                // The blank-board source is brighter than the reference sketch. A warm
+                // translucent glaze brings it back to the muted chestnut of home_bg while
+                // keeping its pixel wood grain and hardware visible.
+                drawRect(
+                    color = Color(0xFF6B2B17).copy(alpha = 0.26f),
+                    topLeft = Offset(
+                        (originX + targetLeft * scale).roundToInt().toFloat(),
+                        (originY + targetTop * scale).roundToInt().toFloat(),
+                    ),
+                    size = Size(
+                        (targetWidth * scale).roundToInt().toFloat(),
+                        (targetHeight * scale).roundToInt().toFloat(),
+                    ),
+                )
             }
-            detail(140, 185, 680, 260) // Reference-style title, leaves and flower.
-            detail(758, 935, 76, 47) // Bird perched on the upper board.
-            detail(589, 977, 270, 83)
-            detail(560, 1066, 317, 79)
-            detail(560, 1150, 317, 84)
-            detail(622, 1240, 199, 83)
+            blankBoard(589, 977, 270, 83, 696, 1298, 148, 63)
+            blankBoard(560, 1066, 317, 79, 699, 1359, 146, 65)
+            blankBoard(560, 1150, 317, 84, 699, 1422, 146, 66)
+            blankBoard(622, 1240, 199, 83, 716, 1487, 100, 64)
         }
 
         fun region(left: Float, top: Float, width: Float, height: Float): Modifier =
@@ -134,9 +156,10 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
                 .offset { IntOffset((originX + left * scale).roundToInt(), (originY + top * scale).roundToInt()) }
                 .size(with(density) { (width * scale).toDp() }, with(density) { (height * scale).toDp() })
 
-        // Actual source bitmap: 948 × 1659. Keep these coordinates with home_farm.png.
+        // Actual source bitmap: 851 × 1847. Keep these coordinates with home_bg.png.
         SceneHotspot(
-            modifier = region(174f, 955f, 174f, 244f),
+            // The reference scene uses the mailbox as the account entry point.
+            modifier = region(354f, 1250f, 105f, 151f),
             description = "选择账号，当前：${cur?.name ?: "未选择账号"}",
             onClick = {
                 if (showAccountBox) {
@@ -147,45 +170,48 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
                 }
             },
         )
-        Box(region(628f, 985f, 193f, 61f), contentAlignment = Alignment.Center) {
-            PxText("start", size = with(density) { (39f * scale).toSp() }, color = signInk,
-                font = pixelFont, maxLines = 1, align = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth())
+        Box(region(700f, 1301f, 140f, 56f), contentAlignment = Alignment.Center) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PxText("start", size = with(density) { (20f * scale).toSp() }, color = signInk,
+                    font = pixelFont, maxLines = 1, align = TextAlign.Center)
+                Spacer(Modifier.width(with(density) { (4f * scale).toDp() }))
+                SignSymbol(heartPixels, Color(0xFFD9473F), Modifier.size(with(density) { (20f * scale).toDp() }))
+            }
         }
-        Box(region(624f, 1241f, 197f, 80f), contentAlignment = Alignment.Center) {
-            SignSymbol(gearPixels, signInk, Modifier.size(with(density) { (49f * scale).toDp() }))
+        Box(region(718f, 1489f, 96f, 59f), contentAlignment = Alignment.Center) {
+            SignSymbol(heartOutlinePixels, signInk, Modifier.size(with(density) { (30f * scale).toDp() }))
         }
         SceneHotspot(
-            modifier = region(592f, 977f, 264f, 80f),
+            modifier = region(688f, 1291f, 164f, 76f),
             description = "start，开始记账",
             enabled = cur != null,
             onClick = { cur?.let { onStart(it.id) } },
         )
         SceneHotspot(
-            modifier = region(624f, 1241f, 197f, 80f),
+            modifier = region(706f, 1480f, 118f, 78f),
             description = "设置",
             onClick = { showSettings = true },
         )
 
-        // Live text uses the same font as the app; the painted board edges remain visible.
+        // Live text uses the same pixel font as the app; the reference wood grain remains visible.
         blessings.forEachIndexed { index, text ->
             Box(
-                region(583f, if (index == 0) 1074f else 1161f, 274f, 63f),
+                region(701f, if (index == 0) 1362f else 1425f, 142f, 58f),
                 contentAlignment = Alignment.Center,
             ) {
-                PxText(text, size = with(density) { ((if (text.length <= 6) 35f else 30f) * scale).toSp() },
+                PxText(text, size = with(density) { ((if (text.length <= 6) 18f else 15f) * scale).toSp() },
                     color = signInk, font = pixelFont,
                     maxLines = 1, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }
             SceneHotspot(
-                modifier = region(563f, if (index == 0) 1067f else 1152f, 314f, 80f),
+                modifier = region(688f, if (index == 0) 1352f else 1415f, 164f, 78f),
                 description = "编辑祝福：$text",
                 onClick = { blessingDraft = text; editingBlessing = index },
             )
         }
 
-        // The account box is revealed by the NPC; its own click opens the account list.
-        if (showAccountBox) Box(region(340f, 1160f, 216f, 54f)) {
+        // The account box is revealed by the mailbox; its own click opens the account list.
+        if (showAccountBox) Box(region(276f, 1190f, 216f, 54f)) {
             PixelPanel(
                 modifier = Modifier.fillMaxSize()
                     .clickable(role = Role.Button, onClickLabel = "展开账号列表") { showPicker = !showPicker }
@@ -257,10 +283,10 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
             }, bg = Px.Clay, modifier = Modifier.weight(1f))
         }) {
             PixelTextField(value = blessingDraft,
-                onValueChange = { blessingDraft = it.replace("\n", "").replace("\r", "").take(8) },
+                onValueChange = { blessingDraft = it.replace("\n", "").replace("\r", "").take(7) },
                 placeholder = "写下喜欢的话", modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
-            PxText("最多 8 个字 · ${blessingDraft.length}/8", size = 11.sp, color = Px.GrayText)
+            PxText("最多 7 个字 · ${blessingDraft.length}/7", size = 11.sp, color = Px.GrayText)
         }
     }
     if (addingAccount) {
@@ -288,11 +314,22 @@ fun StartScreen(store: Store, onStart: (String) -> Unit) {
     }
 }
 
-private val gearPixels = listOf(
-    "......####......", "......####......", "..##..####..##..", "..############..",
-    "...##########...", "...##########...", "######....######", "######....######",
-    "######....######", "######....######", "...##########...", "...##########...",
-    "..############..", "..##..####..##..", "......####......", "......####......",
+private val heartPixels = listOf(
+    ".##.##.",
+    "#######",
+    "#######",
+    ".#####.",
+    "..###..",
+    "...#...",
+)
+
+private val heartOutlinePixels = listOf(
+    ".##.##.",
+    "##...##",
+    "#.....#",
+    ".#...#.",
+    "..#.#..",
+    "...#...",
 )
 
 /** Integer-grid silhouettes share the board lettering's dark coffee ink. */

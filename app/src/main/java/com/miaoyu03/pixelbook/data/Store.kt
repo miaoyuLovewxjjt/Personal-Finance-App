@@ -50,7 +50,7 @@ class Store(context: Context) {
     fun setHomeBlessing(index: Int, text: String) {
         require(index in 0..1)
         val value = text.trim()
-        require(value.isNotEmpty() && value.length <= 8 && '\n' !in value && '\r' !in value)
+        require(value.isNotEmpty() && value.length <= 7 && '\n' !in value && '\r' !in value)
         cfg.edit().putString("home_blessing_$index", value).apply()
     }
 
