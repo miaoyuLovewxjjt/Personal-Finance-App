@@ -468,7 +468,7 @@ fun AccountDepositsScreen(
             }
         }
 
-        // 公用资产：按类别分组（现金/黄金/股票/基金/其他 + 自定义），各组内时间降序
+        // 公用资产：按类别分组（现金/黄金/股票/基金/珠宝首饰/其他 + 自定义），各组内时间降序
         LazyColumn(modifier = Modifier.weight(1f)) {
             grouped.forEach { (cat, list) ->
                 DepositGroup(
@@ -616,7 +616,7 @@ private fun AccountDepositFormDialog(
             Spacer(Modifier.height(4.dp))
             PixelDropdown(
                 label = "类别",
-                options = depCats.map { PixelOption(it, depCatIcon(it)) } + listOf(PixelOption(CUSTOM_CAT, "pencil")),
+                options = depCats.map { PixelOption(it, depCatIcon(it)) } + listOf(PixelOption(CUSTOM_CAT, "dots")),
                 selected = if (cat == CUSTOM_CAT) CUSTOM_CAT else cat,
                 onSelect = { sel -> cat = sel },
                 modifier = Modifier.fillMaxWidth(),
@@ -1082,12 +1082,13 @@ private fun AmountSwitch(hide: Boolean, onToggle: () -> Unit) {
     PixelSegSwitch(hidden = hide, onToggle = onToggle)
 }
 
-/** 资产类别 → 图标（现金=钞票 / 黄金=金币堆 / 股票=柱状图 / 基金=宝箱 / 其他·自定义=省略号） */
+/** 资产类别 → 图标（现金=钞票 / 黄金=金条 / 股票=走势图 / 基金=简化柱状图 / 珠宝首饰=项链 / 其他·自定义=省略号） */
 fun depCatIcon(cat: String): String = when (cat) {
     DepositCats.CASH -> "bills"
-    DepositCats.GOLD -> "coinPile"
-    DepositCats.STOCK -> "statChart"
-    DepositCats.FUND -> "chest"
+    DepositCats.GOLD -> "goldBars"
+    DepositCats.STOCK -> "stockTrend"
+    DepositCats.FUND -> "statChart"
+    DepositCats.JEWELRY -> "jewelryNecklace"
     else -> "dots"
 }
 
@@ -1097,5 +1098,6 @@ fun depCatColor(cat: String): Color = when (cat) {
     DepositCats.GOLD -> Px.YellowDark
     DepositCats.STOCK -> Px.SkyDark
     DepositCats.FUND -> Px.WoodDark
+    DepositCats.JEWELRY -> Px.Red
     else -> Px.GrayText
 }

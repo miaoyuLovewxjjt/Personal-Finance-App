@@ -77,7 +77,7 @@ data class Deposit(
     val name: String,           // 物品名称
     val note: String,           // 备注
     val value: Cents,           // 价值（分）
-    val category: String = "",  // 资产类别（现金/黄金/股票/基金/其他/自定义；空=按 kind 推导）
+    val category: String = "",  // 资产类别（现金/黄金/股票/基金/珠宝首饰/其他/自定义；空=按 kind 推导）
 )
 
 enum class DepositKind(val label: String) {
@@ -90,7 +90,8 @@ object DepositCats {
     const val GOLD = "黄金"
     const val STOCK = "股票"
     const val FUND = "基金"
-    val list = listOf(CASH, GOLD, STOCK, FUND, CATEGORY_OTHERS)
+    const val JEWELRY = "珠宝首饰"
+    val list = listOf(CASH, GOLD, STOCK, FUND, JEWELRY, CATEGORY_OTHERS)
 }
 
 /** 我的物品（账户级清单：记录持有物及其持有成本；日均价格 = 买入价格 ÷ 已用天数，运行时算） */

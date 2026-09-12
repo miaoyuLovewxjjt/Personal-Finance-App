@@ -131,7 +131,12 @@ fun ProfileCard(
             Spacer(Modifier.height(2.dp))
             // ② 我的钱包（图标装饰 + 文字可点击 → 我的钱包页；与资产入口同款图标/字号）
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("bankCard", size = 28.dp)
+                Box(
+                    modifier = Modifier.size(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    PixelIcon("bankCard", size = 28.dp)
+                }
                 Spacer(Modifier.width(8.dp))
                 PxText(
                     "我的钱包", size = 15.sp, color = Px.Brown,
@@ -145,7 +150,13 @@ fun ProfileCard(
             Spacer(Modifier.height(2.dp))
             // ②b 我的物品（纸箱图标装饰 + 文字可点击 → 我的物品页；与钱包入口同款）
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PixelIcon("box", size = 28.dp)
+                Box(
+                    modifier = Modifier.size(32.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // 背包素材透明留白较多，放大到 32dp 后与钱包/宝箱的可见主体接近
+                    PixelIcon("box", size = 32.dp)
+                }
                 Spacer(Modifier.width(8.dp))
                 PxText(
                     "我的物品", size = 15.sp, color = Px.Brown,
@@ -168,8 +179,8 @@ fun ProfileCard(
                         .padding(vertical = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // 宝箱素材透明留白较多，使用 32dp 后与上方钱包图标的视觉大小一致
-                    PixelIcon("chest", size = 32.dp)
+                    // 新宝箱素材主体占比更满，使用 28dp 与上方两个入口的视觉大小保持一致
+                    PixelIcon("chest", size = 28.dp)
                     Spacer(Modifier.height(2.dp))
                     PxText("我", size = 15.sp, color = Px.Brown, align = TextAlign.Center)
                     PxText("的", size = 15.sp, color = Px.Brown, align = TextAlign.Center)

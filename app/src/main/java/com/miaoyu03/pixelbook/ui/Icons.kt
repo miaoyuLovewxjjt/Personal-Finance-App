@@ -116,6 +116,27 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 黄金：三根摞放的金条 ================= */
+    val goldBars = Def("goldBars", basePalette, listOf(
+        "................",
+        "....bbbbbb......",
+        "...bYYYYYYb.....",
+        "..bYyYYYYYb.....",
+        "..bYYYYYYYb.....",
+        "...bbbbbbbbbb...",
+        "..bYYYYYYYYYYb..",
+        ".bYyYYYYYYYYb...",
+        ".bYYYYYYYYYYYYb.",
+        "..bOOOOOOOOOOb..",
+        "......bbbbbb....",
+        ".....bYYYYYYb...",
+        "....bYyYYYYYb...",
+        "....bYYYYYYYb...",
+        ".....bOOOOOOOb..",
+        "......bbbbbb....",
+        "................",
+    ))
+
     /* ================= 加号（游戏机十字键：一体剪影无交叉线 + 左上高光右下阴影） ================= */
     val plus = Def("plus", basePalette, listOf(
         "................",
@@ -156,6 +177,26 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 日历右箭头：与 chevronL 同画布居中，左右严格镜像 ================= */
+    val calendarChevronR = Def("calendarChevronR", basePalette, listOf(
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "....YY..........",
+        "....YYYY........",
+        "....YYYYYY......",
+        "....YYYYYYYY....",
+        "....YYYYYY......",
+        "....YYYY........",
+        "....YY..........",
+        "................",
+        "................",
+        "................",
+        "................",
+    ))
+
     /* ================= 左箭头（朝左开口）：标准实心三角 尖朝左（◀）。右边缘竖直笔直、向左收尖、上下对称。 ================= */
     val chevronL = Def("chevronL", basePalette, listOf(
         "................",
@@ -176,24 +217,24 @@ object PixelIcons {
         "................",
     ))
 
-    /* ================= 微信（绿色对话气泡，两只白眼睛） ================= */
+    /* ================= 微信（双层绿色对话气泡，两组白色眼睛） ================= */
     val chat = Def("chat", basePalette, listOf(
         "................",
-        "................",
-        "................",
-        "................",
-        "................",
-        "..bbbbbbbbbbb...",
+        ".....bbbbbb.....",
+        "...bbggggggbb...",
+        "..bggggggggggb..",
+        "..bggwwggwwggb..",
+        "..bggggggggggb..",
+        "...bggggggggb...",
+        "....bggggggb....",
+        "......bbbb......",
+        "..bbbbbbbbbb....",
         ".bGGGGGGGGGGb...",
-        ".bGbbbbbbbGGb...",
-        ".bGbwwbwwbGGb...",
-        ".bGwwbwwbwGGb...",
+        ".bGGwwGGwwGGb...",
         ".bGGGGGGGGGGb...",
-        ".bGGGGGGGbbb....",
-        "..bbbbbbbbb.....",
-        "................",
-        "................",
-        "................",
+        "..bGGGGGGGGb....",
+        "...bGGGGGGb.....",
+        "....bbbbbb......",
     ))
 
     /* ================= 支付宝（天蓝盾牌 + 白芯，可爱风） ================= */
@@ -253,6 +294,26 @@ object PixelIcons {
         "....bNNNNNNb....",
         ".....bbbbbb.....",
         "................",
+        "................",
+    ))
+
+    /* ================= 银行卡来源（横向卡片、磁条、芯片与信息线） ================= */
+    val bankCardSource = Def("bankCardSource", basePalette, listOf(
+        "................",
+        "..bbbbbbbbbbbb..",
+        ".bssssssssssssb.",
+        ".bSSSSSSSSSSSSb.",
+        ".bSSSSSSSSSSSSb.",
+        ".bSYYssssssssSb.",
+        ".bSYYssssssssSb.",
+        ".bSYYssssssssSb.",
+        ".bSssssssssssSb.",
+        ".bSwwwwwwwwwwSb.",
+        ".bSwwwwwwwwwwSb.",
+        ".bSssNNNNNsssSb.",
+        ".bSssNNNNNsssSb.",
+        ".bSSSSSSSSSSSSb.",
+        "..bbbbbbbbbbbb..",
         "................",
     ))
 
@@ -820,6 +881,46 @@ object PixelIcons {
         "................",
     ))
 
+    /* ================= 股票：上升走势图（坐标轴 + 像素折线） ================= */
+    val stockTrend = Def("stockTrend", basePalette, listOf(
+        "................",
+        "................",
+        "..bb............",
+        "..bb.........bb.",
+        "..bb........bSSb",
+        "..bb......bSSb..",
+        "..bb.....bSSb...",
+        "..bb...bSSb.....",
+        "..bb..bSSb......",
+        "..bb.bSSb.......",
+        "..bbbSS.........",
+        "..bSSb..........",
+        "..bbbbbbbbbbbb..",
+        "................",
+        "................",
+        "................",
+    ))
+
+    /* ================= 珠宝首饰：金色链条 + 红宝石吊坠 ================= */
+    val jewelryNecklace = Def("jewelryNecklace", basePalette, listOf(
+        "................",
+        "...bYY....YYb...",
+        "..bY........Yb..",
+        "..bY........Yb..",
+        "...bY......Yb...",
+        "....bY....Yb....",
+        ".....bY..Yb.....",
+        "......bYYb......",
+        ".......bb.......",
+        "......bYYb......",
+        ".....bYrrYb.....",
+        "....bYrrrrYb....",
+        ".....bYrrYb.....",
+        "......bYYb......",
+        ".......bb.......",
+        "................",
+    ))
+
     /** 返回箭头：标准「←」——实心尖三角 + 自三角中部向右伸出的细水平杆 */
     val back = Def("back", basePalette, listOf(
         "................",
@@ -1043,7 +1144,8 @@ object PixelIcons {
         "chevronR" -> chevronR; "chevronL" -> chevronL; "chevronD" -> chevronD; "back" -> back
         "collapseL" -> collapseL; "collapseR" -> collapseR
         "triL" -> triL; "triR" -> triR
-        "bankCard" -> bankCard; "book" -> book; "chat" -> chat; "alipay" -> alipay
+        "bankCard" -> bankCard; "bankCardSource" -> bankCardSource
+        "book" -> book; "chat" -> chat; "alipay" -> alipay
         "idcard" -> idcard
         "pencil" -> pencil; "trash" -> trash; "burger" -> burger; "car" -> car
         "bag" -> bag; "gamepad" -> gamepad; "house" -> house; "bills" -> bills
@@ -1051,7 +1153,9 @@ object PixelIcons {
         "gift" -> gift; "giftRed" -> giftRed; "calendar" -> calendar
         "calendarGold" -> calendarGold; "calendarCute" -> calendarCute; "sun" -> sun; "cloud" -> cloud
         "rain" -> rain; "snow" -> snow; "chest" -> chest
-        "windy" -> windy; "statChart" -> statChart
+        "windy" -> windy; "statChart" -> statChart; "goldBars" -> goldBars
+        "stockTrend" -> stockTrend; "jewelryNecklace" -> jewelryNecklace
+        "calendarChevronR" -> calendarChevronR
         "gear" -> gear; "export" -> export
         "avatarMan" -> avatarMan; "avatarWoman" -> avatarWoman
         "box" -> box

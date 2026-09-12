@@ -572,9 +572,9 @@ fun PixelCalendarDialog(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            PixelIconButton(icon = "back", size = 34.dp, onClick = { ym = ym.minusMonths(1) }, desc = "上一月")
+            PixelIconButton(icon = "chevronL", size = 34.dp, onClick = { ym = ym.minusMonths(1) }, desc = "上一月")
             PxText("${ym.year}年${ym.monthValue}月", size = 15.sp)
-            PixelIconButton(icon = "chevronR", size = 34.dp, onClick = { ym = ym.plusMonths(1) }, desc = "下一月")
+            PixelIconButton(icon = "calendarChevronR", size = 34.dp, onClick = { ym = ym.plusMonths(1) }, desc = "下一月")
         }
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth()) {

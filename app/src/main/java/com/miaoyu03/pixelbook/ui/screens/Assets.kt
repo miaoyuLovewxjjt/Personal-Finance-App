@@ -77,8 +77,8 @@ private val SOURCE_PRESETS = listOf("支付宝", "银行卡", "微信", "自定�
 private fun sourceIcon(src: String): String = when (src) {
     "支付宝" -> "alipay"
     "微信" -> "chat"
-    "银行卡" -> "bankCard"
-    else -> "coinPile"
+    "银行卡" -> "bankCardSource"
+    else -> "coin"
 }
 
 @Composable
